@@ -1338,11 +1338,11 @@ def main():
 
             # Download per PIC PR Balance
             with st.container(border=True):
-                st.subheader("📥 Download Data PR Balance per PIC")
+                st.subheader("📥 Download Data SO Balance per PIC")
 
-                if not df_pr_f.empty and "PIC Procurement" in df_pr_f.columns:
+                if not df_so_f.empty and "PIC Procurement" in df_so_f.columns:
                     # Filter status hanya Need Approve, Approved, In Progress
-                    df_filtered_status = df_pr_f.copy()
+                    df_filtered_status = df_so_f.copy()
                     #[
                         #df_pr_valid["Status"].isin(["Need Approve", "Approved", "In Progress"])
                     #].copy()
@@ -1352,7 +1352,7 @@ def main():
                         df_filtered_status["PIC Procurement"].fillna("Unassigned").astype(str).unique().tolist()
                     )
 
-                    selected_pic = st.selectbox("Pilih PIC Procurement:", options, key="pr_balance_pic_select")
+                    selected_pic = st.selectbox("Pilih PIC Procurement:", options, key="so_balance_pic_select")
 
                     # Jika pilih "Semua", ambil semua data sesuai status
                     if selected_pic == "Semua":
@@ -1364,13 +1364,13 @@ def main():
 
                     st.download_button(
                         label=f"⬇️Download Data {selected_pic}.xlsx",
-                        data=to_excel_bytes(filtered, sheet_name="Data_PR_Balance"),
-                        file_name=f"Data_PR_balance_{selected_pic}_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                        data=to_excel_bytes(filtered, sheet_name="Data_SO_Balance"),
+                        file_name=f"Data_SO_balance_{selected_pic}_{datetime.now().strftime('%Y%m%d')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
                     st.caption(f"Menampilkan {len(filtered):,} baris data yang akan di-download.")
                 else:
-                    st.info("Data tidak tersedia untuk fitur download PR Balance per PIC.")
+                    st.info("Data tidak tersedia untuk fitur download SO Balance per PIC.")
 
     # =====================================================
     # MID PR
