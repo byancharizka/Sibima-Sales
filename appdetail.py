@@ -1399,102 +1399,102 @@ def main():
             #].copy()
 
             with st.container(border=True):
-                st.subheader("⏳ Distribusi Aging PR")
-                render_aging_bar(df_pr_final_valid, "transaction_number", chart_key="aging_pr")
+                st.subheader("⏳ Distribusi Aging SO")
+                render_aging_bar(df_so_final_valid, "transaction_number", chart_key="aging_so")
 
             with st.container(border=True):
-                st.subheader("⏳ Distribusi Aging PR Balance")
-                render_aging_bar(df_pr_valid, "transaction_number", chart_key="aging_pr_outstanding")
+                st.subheader("⏳ Distribusi Aging SO Balance")
+                render_aging_bar(df_so_valid, "transaction_number", chart_key="aging_so_outstanding")
 
-                pic_aging_summary = summarize_pic_aging(df_pr_valid, "PIC Procurement", "transaction_number")
-                pic_aging_summary_final = summarize_pic_aging(df_pr_final_valid, "PIC Procurement", "transaction_number")
+                pic_aging_summary = summarize_pic_aging(df_so_valid, "PIC Procurement", "transaction_number")
+                pic_aging_summary_final = summarize_pic_aging(df_so_final_valid, "PIC Procurement", "transaction_number")
 
             with st.container(border=True):
-                st.subheader("👥 Rata-rata Proses PR")
+                st.subheader("👥 Rata-rata Proses SO")
                 #st.dataframe(pic_aging_summary, use_container_width=True, hide_index=True)
                 render_pic_aging_bar(pic_aging_summary_final)
 
             with st.container(border=True):
-                st.subheader("👥 Rata-rata Proses PR Balance")
+                st.subheader("👥 Rata-rata Proses SO Balance")
                 #st.dataframe(pic_aging_summary, use_container_width=True, hide_index=True)
                 render_pic_aging_bar(pic_aging_summary)
 
             # Download per Category PR Aging
             with st.container(border=True):
-                st.subheader("📥 Download Data per Categori Aging PR")
+                st.subheader("📥 Download Data per Categori Aging SO")
 
-                if not df_pr_final_valid.empty:
+                if not df_so_final_valid.empty:
                     # Filter data aging PR berdasarkan kategori yang dipilih
-                    selected_category_pr = st.selectbox(
-                        "Pilih kategori aging PR untuk diunduh 📂",
+                    selected_category_so = st.selectbox(
+                        "Pilih kategori aging SO untuk diunduh 📂",
                         ["Semua", "0-30 hari", "31-60 hari", "61-90 hari", ">90 hari"]
                     )
 
                     # Jika bukan 'Semua', filter sesuai kategori
-                    if selected_category_pr != "Semua":
-                        df_pr_filtered = df_pr_final_valid[
-                            df_pr_final_valid["Aging Category"] == selected_category_pr
+                    if selected_category_so != "Semua":
+                        df_so_filtered = df_so_final_valid[
+                            df_so_final_valid["Aging Category"] == selected_category_so
                         ].copy()
                     else:
-                        df_pr_filtered = df_pr_final_valid.copy()
+                        df_so_filtered = df_so_final_valid.copy()
 
                     # Tombol download
                     st.download_button(
-                    label=f"⬇️Download Data PR Aging ({selected_category_pr})",
-                    data=to_excel_bytes(df_pr_filtered, sheet_name="PR Aging"),
-                    file_name=f"PR_Aging_{selected_category_pr.replace(' ', '_')}.xlsx",
+                    label=f"⬇️Download Data SO Aging ({selected_category_so})",
+                    data=to_excel_bytes(df_so_filtered, sheet_name="SO Aging"),
+                    file_name=f"SO_Aging_{selected_category_so.replace(' ', '_')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key=f"download_pr_aging_{selected_category_pr}"   # 🔹 key unik
+                    key=f"download_so_aging_{selected_category_so}"   # 🔹 key unik
                     )
 
                 else:
-                    st.info("Data tidak tersedia untuk fitur download per Category Aging PR.")
+                    st.info("Data tidak tersedia untuk fitur download per Category Aging SO.")
 
-            # Download per Category PR Balance Aging
+            # Download per Category SO Balance Aging
             with st.container(border=True):
-                st.subheader("📥 Download Data per Categori Aging PR Balance")
+                st.subheader("📥 Download Data per Categori Aging SO Balance")
 
                 if not df_pr_valid.empty:
-                    # Filter data aging PR berdasarkan kategori yang dipilih
+                    # Filter data aging SO berdasarkan kategori yang dipilih
                     selected_category_balance = st.selectbox(
-                        "Pilih kategori aging PR Balance untuk diunduh 📂",
+                        "Pilih kategori aging SO Balance untuk diunduh 📂",
                         ["Semua", "0-30 hari", "31-60 hari", "61-90 hari", ">90 hari"]
                     )
 
                     # Jika bukan 'Semua', filter sesuai kategori
                     if selected_category_balance != "Semua":
-                        df_balance_filtered = df_pr_valid[
-                            df_pr_valid["Aging Category"] == selected_category_balance
+                        df_balance_filtered = df_so_valid[
+                            df_so_valid["Aging Category"] == selected_category_balance
                         ].copy()
                     else:
-                        df_balance_filtered = df_pr_valid.copy()
+                        df_balance_filtered = df_so_valid.copy()
 
                     # Tombol download
                     st.download_button(
-                    label=f"⬇️Download Data PR Balance Aging ({selected_category_balance})",
-                    data=to_excel_bytes(df_balance_filtered, sheet_name="PR Balance Aging"),
-                    file_name=f"PR_Balance_Aging_{selected_category_balance.replace(' ', '_')}.xlsx",
+                    label=f"⬇️Download Data SO Balance Aging ({selected_category_balance})",
+                    data=to_excel_bytes(df_balance_filtered, sheet_name="SO Balance Aging"),
+                    file_name=f"SO_Balance_Aging_{selected_category_balance.replace(' ', '_')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key=f"download_pr_balance_{selected_category_balance}"   # 🔹 key unik
+                    key=f"download_so_balance_{selected_category_balance}"   # 🔹 key unik
                     )
 
                 else:
-                    st.info("Data tidak tersedia untuk fitur download per Category Aging PR Balance.")
+                    st.info("Data tidak tersedia untuk fitur download per Category Aging SO Balance.")
 
 
     # =====================================================
-    # RIGHT - PR
+    # RIGHT - SO
     # =====================================================
         with col_kanan:
             with st.container(border=True):
-                st.subheader("📏 SLA Compliance PR")
-                render_sla_gauge(df_pr_final_valid, threshold=5, title="SLA Compliance PR")
+                st.subheader("📏 SLA Compliance SO")
+                render_sla_gauge(df_so_final_valid, threshold=5, title="SLA Compliance SO")
 
             with st.container(border=True):
                 st.subheader("📏 SLA Compliance PR Balance")
-                render_sla_gauge(df_pr_valid, threshold=5, title="SLA Compliance PR Balance")
+                render_sla_gauge(df_so_valid, threshold=5, title="SLA Compliance SO Balance")
 
-            pic_sla_summary = summarize_pic_sla(df_pr_final_valid, "PIC Procurement", "transaction_number", threshold=5)
+            pic_sla_summary = summarize_pic_sla(df_so_final_valid, "PIC Procurement", "transaction_number", threshold=5)
 
             with st.container(border=True):
                 st.subheader("📏 SLA Compliance per PIC Procurement")
@@ -1503,29 +1503,29 @@ def main():
 
             with st.container(border=True):
                 st.subheader("📈 Trend SLA")
-                render_sla_trend(df_pr_final_valid, threshold=5, date_col="transaction_date")
+                render_sla_trend(df_so_final_valid, threshold=5, date_col="transaction_date")
 
 
             # Download PR by period & status
             with st.container(border=True):
-                st.subheader("📥 Download Data PR (Periode & Status)")
+                st.subheader("📥 Download Data SO (Periode & Status)")
 
-                if not df_pr_final_real.empty and "Status" in df_pr_final_real.columns:
-                    all_statuses = sorted([s for s in df_pr_final_real["Status"].dropna().astype(str).unique().tolist() if s.strip()])
+                if not df_so_final_real.empty and "Status" in df_so_final_real.columns:
+                    all_statuses = sorted([s for s in df_so_final_real["Status"].dropna().astype(str).unique().tolist() if s.strip()])
                     selected_statuses = st.multiselect(
                         "Pilih Status untuk di-download:",
                         all_statuses,
                         default=all_statuses,
-                        key="pr_status_export"
+                        key="so_status_export"
                     )
 
-                    df_download = df_pr_final_real[df_pr_final_real["Status"].isin(selected_statuses)].copy()
+                    df_download = df_so_final_real[df_so_final_real["Status"].isin(selected_statuses)].copy()
 
                     if not df_download.empty:
                         st.download_button(
                             label=f"⬇️Download {len(df_download):,} Baris Data (Filtered).xlsx",
-                            data=to_excel_bytes(df_download, sheet_name="Data_PR"),
-                            file_name=f"Data_PR_Export_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                            data=to_excel_bytes(df_download, sheet_name="Data_SO"),
+                            file_name=f"Data_SO_Export_{datetime.now().strftime('%Y%m%d')}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             key=f"download {len(df_download):,} Baris Data (Filtered)"   # 🔹 key unik
                         )
@@ -1533,15 +1533,15 @@ def main():
                     else:
                         st.warning("Tidak ada data yang sesuai dengan filter yang dipilih.")
                 else:
-                    st.info("Data PR tidak tersedia untuk export.")
+                    st.info("Data SO tidak tersedia untuk export.")
 
-            # Download per PIC PR
+            # Download per PIC SO
             with st.container(border=True):
-                st.subheader("📥 Download Data PR per PIC")
+                st.subheader("📥 Download Data SO per PIC")
 
-                if not df_pr_final_real.empty and "PIC Procurement" in df_pr_final_real.columns:
+                if not df_so_final_real.empty and "PIC Procurement" in df_so_final_real.columns:
                     # Filter status hanya Need Approve, Approved, In Progress
-                    df_filtered_status = df_pr_final_real.copy()
+                    df_filtered_status = df_so_final_real.copy()
                     #[
                         #df_pr_final_real["Status"].isin(["Approved", "In Progress", "Complete"])
                     #].copy()
@@ -1563,13 +1563,13 @@ def main():
 
                     st.download_button(
                         label=f"⬇️Download Data {selected_pic}.xlsx",
-                        data=to_excel_bytes(filtered, sheet_name="Data_PR"),
-                        file_name=f"Data_PR_{selected_pic}_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                        data=to_excel_bytes(filtered, sheet_name="Data_SO"),
+                        file_name=f"Data_SO_{selected_pic}_{datetime.now().strftime('%Y%m%d')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
                     st.caption(f"Menampilkan {len(filtered):,} baris data yang akan di-download.")
                 else:
-                    st.info("Data tidak tersedia untuk fitur download PR Balance per PIC.")
+                    st.info("Data tidak tersedia untuk fitur download SO Balance per PIC.")
 
 
     # =====================================================
