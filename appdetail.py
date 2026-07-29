@@ -1138,7 +1138,6 @@ def main():
     df_do_final_real["total_do_row"] = df_do_final_real["item_quantity"] * df_do_final_real["net_price_unit"]
     total_do = df_do_final_real["total_do_row"].sum()
 
-
     #df_npr_final_real["disc_per_unit"] = df_npr_final_real["item_price"] * (df_npr_final_real["item_discount"] / 100)
     #df_npr_final_real["tax_unit"] = (df_npr_final_real["item_price"] - df_npr_final_real["disc_per_unit"]) * (df_npr_final_real["item_tax1_percentage"] / 100)
     #df_npr_final_real["net_price_unit"] = df_npr_final_real["item_price"] - df_npr_final_real["disc_per_unit"] + df_npr_final_real["tax_unit"]
@@ -1151,7 +1150,11 @@ def main():
     #df_do_final_real["net_price_unit"] = df_do_final_real["item_price"] - df_do_final_real["disc_per_unit"] + df_do_final_real["tax_unit"]
     #df_do_final_real["net_price_unit"] = df_do_final_real["item_price"] - df_do_final_real["disc_per_unit"]
     #df_do_final_real["total_do_row"] = df_do_final_real["item_quantity"] * df_do_final_real["net_price_unit"]
-    total_do = df_do_final_real["total_do_row"].sum()
+    
+    total_so_count = safe_unique_count(df_so_final_real, "transaction_number")
+    total_so_balance_count = safe_unique_count(df_so_f, "No. SO")
+    total_so_rows = len(df_so_final_real)
+    total_so_balance_rows = len(df_so_f)
 
     total_pr_count = safe_unique_count(df_pr_final_real, "transaction_number")
     total_pr_balance_count = safe_unique_count(df_pr_f, "No. PR")
@@ -1164,8 +1167,10 @@ def main():
     #total_npr_count = safe_unique_count(df_npr_f, "No. Transaksi")
     #total_npr_rows = len(df_npr_f)
 
+    avg_nominal_so = safe_mean(df_so_f, "Nominal")
     avg_nominal_do = safe_mean(df_do_f, "Nominal")
 
+    top_pic_so = get_top_pic(df_so_f, "PIC Procurement", "No. SO")
     top_pic_pr = get_top_pic(df_pr_f, "PIC Procurement", "No. PR")
     top_pic_do = get_top_pic(df_do_f, "PIC Procurement", "No. DO")
     #top_pic_pur = get_top_pic(df_pur_f, "PIC", "No. PUR")
@@ -1176,6 +1181,34 @@ def main():
     #Aging PR
     #df_pr_final_valid = df_pr_final_real[
     #df_pr_final_real["date_inprogress"].notna() | df_pr_final_real["date_complete"].notna()
+
+    #SO
+    df_so_final_valid = df_so_final_real[
+    df_so_final_real["Status"].isin(["Approved", "In Progress", "Complete"])
+    ].copy()
+    df_so_final_valid = apply_search_filter(df_so_final_valid, search_number, search_status, search_pic)
+
+    #Aging SO Balance
+    # Filter SO Balance hanya untuk status aktif (exclude Complete & Draft)
+    df_so_valid = df_so_final_f[
+    ~df_so_final_f["Status"].isin(["Complete", "Draft"])
+    ].copy()
+    df_so_valid = apply_search_filter(df_so_valid, search_number, search_status, search_pic)
+
+
+    # Lanjutkan proses aging hanya untuk SO yang valid
+    #Aging SO
+    df_so_final_valid = calculate_aging(df_so_final_valid, "transaction_date", prefer="approved")
+    df_so_final_valid = categorize_aging(df_so_final_valid)
+    #Aging SO Balance
+    df_so_valid = calculate_aging(df_so_valid, "transaction_date", prefer="approved")
+    df_so_valid = categorize_aging(df_so_valid)
+
+    # Filter hanya SO valid aktif, exclude Draft
+    df_so_final_valid = df_so_final_valid[
+    ~df_so_final_valid["Status"].str.contains("Draft", case=False, na=False)
+    ].copy()
+
     #].copy()
     #PR
     df_pr_final_valid = df_pr_final_real[
@@ -1237,9 +1270,9 @@ def main():
 
                 c1, c2 = st.columns(2)
                 with c1:
-                    metric_card("Total Transaksi PR", f"{total_pr_count:,}")
+                    metric_card("Total Transaksi SO", f"{total_so_count:,}")
                 with c2:
-                    metric_card("Total Transaksi PR Balance", f"{total_pr_balance_count:,}")
+                    metric_card("Total Transaksi SO Balance", f"{total_so_balance_count:,}")
 
 
                 #st.write("Kolom:", df_pr_final_f.columns)
@@ -1248,56 +1281,56 @@ def main():
 
                 c1, c2, c3 = st.columns(3)
                 with c1:
-                    metric_card("Total Item PR", f"{total_pr_rows:,}")
+                    metric_card("Total Item SO", f"{total_so_rows:,}")
                 with c2:
-                    metric_card("Total Item PR Balance", total_pr_balance_rows)
+                    metric_card("Total Item SO Balance", total_so_balance_rows)
                 with c3:
-                    metric_card("PIC Terbanyak", top_pic_pr)
+                    metric_card("PIC Terbanyak", top_pic_so)
 
 
-                pr_summary = summarize_status(df_pr_f, doc_col="No. PR", nominal_col="Nominal")
+                so_summary = summarize_status(df_so_f, doc_col="No. SO", nominal_col="Nominal")
 
                 with st.container(border=True):
-                    st.subheader("🍩 Proporsi Nominal PR Balance per Status")
-                    render_status_pie(pr_summary, "Persentase Distribusi Nominal PR Balance")
+                    st.subheader("🍩 Proporsi Nominal SO Balance per Status")
+                    render_status_pie(so_summary, "Persentase Distribusi Nominal SO Balance")
 
-            pic_summary_pr = summarize_pic_status(df_pr_f, "PIC Procurement", "No. PR")
+            pic_summary_so = summarize_pic_status(df_so_f, "PIC Procurement", "No. SO")
             with st.container(border=True):
-                st.subheader("👤 Analisis Transaksi PR Balance per PIC Procurement & per Status")
+                st.subheader("👤 Analisis Transaksi SO Balance per PIC Procurement & per Status")
                 render_pic_bar(
-                    summary_df=pic_summary_pr,
+                    summary_df=pic_summary_so,
                     x_col="PIC Procurement",
                     y_col="Jumlah_Doc",
                     color_col="Status",
                 )
 
             with st.container(border=True):
-                st.subheader("🔥 Heatmap PR Balance - Aktivitas PIC Procurement")
-                render_pic_heatmap(df_pr_f, "PIC Procurement", "transaction_date", "No. PR", "Heatmap Aktivitas PIC Procurement per Bulan")
+                st.subheader("🔥 Heatmap SO Balance - Aktivitas PIC Procurement")
+                render_pic_heatmap(df_so_f, "PIC Procurement", "transaction_date", "No. SO", "Heatmap Aktivitas PIC Procurement per Bulan")
 
             # Download PR Balance by status
             with st.container(border=True):
-                st.subheader("📥 Download Data PR Balance (Periode & Status)")
+                st.subheader("📥 Download Data SO Balance (Periode & Status)")
 
-                if not df_pr_f.empty and "Status" in df_pr_f.columns:
-                    all_statuses = sorted([s for s in df_pr_f["Status"].dropna().astype(str).unique().tolist() if s.strip()])
+                if not df_so_f.empty and "Status" in df_so_f.columns:
+                    all_statuses = sorted([s for s in df_so_f["Status"].dropna().astype(str).unique().tolist() if s.strip()])
                     selected_statuses = st.multiselect(
                         "Pilih Status untuk di-download:",
                         all_statuses,
                         default=all_statuses,
-                        key="pr_balance_status_export"
+                        key="so_balance_status_export"
                     )
 
-                    df_download_pr_balance = df_pr_f[df_pr_f["Status"].isin(selected_statuses)].copy()
+                    df_download_so_balance = df_so_f[df_so_f["Status"].isin(selected_statuses)].copy()
 
-                    if not df_download_pr_balance.empty:
+                    if not df_download_so_balance.empty:
                         st.download_button(
-                            label=f"⬇️Download {len(df_download_pr_balance):,} Baris Data (Filtered).xlsx",
-                            data=to_excel_bytes(df_download_pr_balance, sheet_name="Data_PR"),
-                            file_name=f"Data_PR_Export_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                            label=f"⬇️Download {len(df_download_so_balance):,} Baris Data (Filtered).xlsx",
+                            data=to_excel_bytes(df_download_so_balance, sheet_name="Data_SO"),
+                            file_name=f"Data_SO_Export_{datetime.now().strftime('%Y%m%d')}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         )
-                        st.caption(f"Menampilkan {len(df_download_pr_balance):,} baris data yang akan di-download.")
+                        st.caption(f"Menampilkan {len(df_download_so_balance):,} baris data yang akan di-download.")
                     else:
                         st.warning("Tidak ada data yang sesuai dengan filter yang dipilih.")
                 else:
