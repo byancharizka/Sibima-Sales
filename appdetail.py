@@ -346,6 +346,7 @@ def get_api_data_new(endpoint: str, source: str = "eas", start_date=None, end_da
 
 def load_all_data(start_date=None, end_date=None) -> dict[str, pd.DataFrame]:
     endpoint_map = {
+        "so": ("so-balance", {"Tanggal": "transaction_date"}),
         "pr": ("pr-balance", {"Tgl. PR": "transaction_date"}),
         "po": ("po-balance", {"Tgl. PO": "transaction_date"}),
         "grn": ("grn-balance", {"Tgl. GRN": "transaction_date"}),
@@ -370,20 +371,22 @@ def load_all_data(start_date=None, end_date=None) -> dict[str, pd.DataFrame]:
 def load_all_data_new(start_date=None, end_date=None) -> dict[str, pd.DataFrame]:
     # Mapping endpoint baru sesuai API kamu
     endpoint_map_new = {
-        "pr": "purchase-requests",
-        "po": "purchase-orders",
-        "do": "delivery-orders",
-        #"npr": "purchase-requests",
+        "so": ("sales-orders", {"date" : "transaction_date"}),
+        "pr": ("purchase-requests",{}),
+        "po": ("purchase-orders", {"date" : "transaction_date"}),
+        "do": ("delivery-orders",{})
     }
 
     result_new = {}
-    for key, endpoint in endpoint_map_new.items():
+    for key, (endpoint, rename_map_new) in endpoint_map_new.items():
         df = get_api_data_new(endpoint, source="eas", start_date=start_date, end_date=end_date)
+
+        if not df.empty:
+            df = df.rename(columns=rename_map_new)
+            df = safe_to_datetime(df, "transaction_date")
         result_new[key] = df
 
     return result_new
-
-
 
 
 # =========================================================
@@ -439,7 +442,7 @@ def apply_search_filter(
     working = df.copy()
     working = normalize_text_columns(
         working,
-        ["Status", "PIC Procurement", "PIC Purchasing", "PIC", "No. PR", "No. DO", "No. PUR", "No. Transaksi"]
+        ["Status", "PIC Procurement", "PIC Purchasing", "PIC", "No. SO", "No. DO", "No. PUR", "No. Transaksi"]
     )
 
     # Filter nomor transaksi: mencari di semua kolom string
@@ -956,10 +959,10 @@ def main():
         )
 
     with col_head2:
-        selected_doc_type = st.selectbox("Pilih Jenis Dokumen 📑", ["PR", "DO", "NPR", "PUR"])
+        selected_doc_type = st.selectbox("Pilih Jenis Dokumen 📑", ["SO", "DO", "NPR", "PUR"])
 
     with col_head3:
-        search_number = st.text_input("Cari Nomor Transaksi 🔍", placeholder="No. PR / No. DO / No. NPR / No. PUR")
+        search_number = st.text_input("Cari Nomor Transaksi 🔍", placeholder="No. SO / No. DO / No. NPR / No. PUR")
 
     with col_head4:
         search_status = st.text_input("Cari Status 🔍", placeholder="Complete / In Progress / Approved / Need Approve")
@@ -978,6 +981,7 @@ def main():
         data_new = load_all_data_new(start_date=start_date, end_date=end_date)
 
     # ---------- ASSIGN DATAFRAME ----------
+    df_so = data_old["so"]
     df_pr = data_old["pr"]
     df_po = data_old["po"]
     df_grn = data_old["grn"]
@@ -985,11 +989,17 @@ def main():
     df_npr = data_old["npr"]
     #df_pur = data_old["pur"]
 
+    df_so_final = data_new["so"]
     df_pr_final = data_new["pr"]
     df_do_final = data_new["do"]
     #df_npr_final = data_new["npr"]
 
     # Pastikan kolom PIC dan Status sesuai
+    #SO
+    df_so_final = df_so_final.rename(columns={
+        #"item_pic_procurement_name": "PIC Procurement",
+        "status_description": "Status"
+    })
     #PR
     df_pr_final = df_pr_final.rename(columns={
         "item_pic_procurement_name": "PIC Procurement",
@@ -1006,6 +1016,11 @@ def main():
     })
 
     # Pastikan kolom tanggal sudah dalam format datetime
+    #DO
+    df_so_final = safe_to_datetime(df_so_final, "transaction_date")
+    df_so_final = safe_to_datetime(df_so_final, "date_approved")
+    df_so_final = safe_to_datetime(df_so_final, "date_inprogress")
+    df_so_final = safe_to_datetime(df_so_final, "date_complete")
     #PR
     df_pr_final = safe_to_datetime(df_pr_final, "transaction_date")
     df_pr_final = safe_to_datetime(df_pr_final, "date_approved")
@@ -1023,12 +1038,14 @@ def main():
     #df_npr_final = safe_to_datetime(df_npr_final, "date_complete")
 
     # ---------- DEFAULT SAFE COPY ----------
+    df_so_f = df_so.copy()
     df_pr_f = df_pr.copy()
     df_po_f = df_po.copy()
     df_grn_f = df_grn.copy()
     df_do_f = df_do.copy()
     df_npr_f = df_npr.copy()
     #df_pur_f = df_pur.copy()
+    df_so_final_f = df_so_final.copy()
     df_pr_final_f = df_pr_final.copy()
     df_do_final_f = df_do_final.copy()
     #df_npr_final_f = df_pr_final.copy()
@@ -1036,23 +1053,28 @@ def main():
     # ---------- DATE FILTER ----------
     if isinstance(selected_date_range, (tuple, list)) and len(selected_date_range) == 2:
         report_start_date, report_end_date = selected_date_range
+        df_so_f = apply_cumulative_filter(df_so_f, report_end_date)
         df_pr_f = apply_cumulative_filter(df_pr_f, report_end_date)
         df_po_f = apply_cumulative_filter(df_po_f, report_end_date)
         df_grn_f = apply_cumulative_filter(df_grn_f, report_end_date)
         df_do_f = apply_cumulative_filter(df_do_f, report_end_date)
         df_npr_f = apply_cumulative_filter(df_npr_f, report_end_date)
         #df_pur_f = apply_cumulative_filter(df_pur_f, report_end_date)
+        df_so_final_f = apply_cumulative_filter(df_so_final_f, report_end_date)
         df_pr_final_f = apply_cumulative_filter(df_pr_final_f, report_end_date)
         df_do_final_f = apply_cumulative_filter(df_do_final_f, report_end_date)
         #df_npr_final_f = apply_cumulative_filter(df_npr_final_f, report_end_date)
 
         # 🔹 Dataset baru (PR Final) pakai realisasi
+        df_so_f_real = apply_realization_filter(df_so_f, report_start_date, report_end_date)
         df_pr_f_real = apply_realization_filter(df_pr_f, report_start_date, report_end_date)
+        df_so_final_real = apply_realization_filter(df_so_final, report_start_date, report_end_date)
         df_pr_final_real = apply_realization_filter(df_pr_final, report_start_date, report_end_date)
         df_do_final_real = apply_realization_filter(df_do_final, report_start_date, report_end_date)
         #df_npr_final_real = apply_realization_filter(df_npr_final, report_start_date, report_end_date)
 
     # ---------- SEARCH FILTER ----------
+    df_so_f = apply_search_filter(df_so_f, search_number, search_status, search_pic)
     df_pr_f = apply_search_filter(df_pr_f, search_number, search_status, search_pic)
     df_po_f = apply_search_filter(df_po_f, search_number, search_status, search_pic)
     df_grn_f = apply_search_filter(df_grn_f, search_number, search_status, search_pic)
@@ -1063,32 +1085,45 @@ def main():
 
 
     # ---------- ENSURE IMPORTANT COLUMNS ----------
+    df_so_f = ensure_columns(df_so_f, ["Nominal", "No. SO", "Status", "PIC Procurement"])
     df_pr_f = ensure_columns(df_pr_f, ["Nominal", "No. PR", "Status", "PIC Procurement"])
     df_po_f = ensure_columns(df_po_f, ["Nominal"])
     df_grn_f = ensure_columns(df_grn_f, ["Nominal"])
     df_do_f = ensure_columns(df_do_f, ["Nominal", "No. DO", "PIC Purchasing"])
     df_npr_f = ensure_columns(df_npr_f, ["Status", "Sales"])
     #df_pur_f = ensure_columns(df_pur_f, ["No. PUR", "PIC", "Status"])
+    df_so_final_real = ensure_columns(df_so_final_real, ["PIC Procurement", "transaction_number","Status", "price", "quantity", "discount", "transaction_total", "tax1_percentage", "tax2_percentage"])
     df_pr_final_real = ensure_columns(df_pr_final_real, ["PIC Procurement", "transaction_number","Status", "price", "quantity", "discount", "transaction_total", "tax1_percentage", "tax2_percentage"])
     df_do_final_real = ensure_columns(df_do_final_real, ["PIC Procurement", "transaction_number","Status", "price", "quantity", "discount", "transaction_total", "tax1_percentage", "tax2_percentage"])
 
+    df_so_f = safe_to_numeric(df_so_f, ["Nominal"])
     df_pr_f = safe_to_numeric(df_pr_f, ["Nominal"])
     df_po_f = safe_to_numeric(df_po_f, ["Nominal"])
     df_grn_f = safe_to_numeric(df_grn_f, ["Nominal"])
     df_do_f = safe_to_numeric(df_do_f, ["Nominal"])
     #df_pr_final_real = safe_to_numeric(df_pr_final_real, ["price", "discount", "quantity", "tax1_percentage", "tax2_percentage"])
+    df_so_final_real= safe_to_numeric(df_so_final_real, ["item_price", "item_discount", "item_quantity", "item_tax1_percentage", "item_tax2_percentage"])
     df_pr_final_real= safe_to_numeric(df_pr_final_real, ["item_price", "item_discount", "item_quantity", "item_tax1_percentage", "item_tax2_percentage"])
     df_do_final_real= safe_to_numeric(df_do_final_real, ["item_price", "item_discount", "item_quantity", "item_tax1_percentage", "item_tax2_percentage"])
     
     # ---------- METRICS ----------
+    total_so_unpr = safe_sum(df_so_f, "Nominal")
     total_pr_unpr = safe_sum(df_pr_f, "Nominal")
     total_po_unpr = safe_sum(df_po_f, "Nominal")
     total_grn_unpr = safe_sum(df_grn_f, "Nominal")
     total_do_unpr = safe_sum(df_do_f, "Nominal")
     #total_pr = safe_sum(df_pr_final_real, "transaction_total")
 
+    df_so_final_real = normalize_text_columns(df_so_final_real, ["item_PIC_Procurement"])
     df_pr_final_real = normalize_text_columns(df_pr_final_real, ["item_PIC_Procurement"])
     df_do_final_real = normalize_text_columns(df_do_final_real, ["item_PIC_Procurement"])
+
+
+    df_so_final_real["disc_per_unit"] = df_so_final_real["item_price"] * (df_so_final_real["item_discount"] / 100)
+    df_so_final_real["tax_unit"] = (df_so_final_real["item_price"] - df_so_final_real["disc_per_unit"]) * (df_so_final_real["item_tax1_percentage"] / 100)
+    df_so_final_real["net_price_unit"] = df_so_final_real["item_price"] - df_so_final_real["disc_per_unit"] + df_so_final_real["tax_unit"]
+    df_so_final_real["total_so_row"] = df_so_final_real["item_quantity"] * df_so_final_real["net_price_unit"]
+    total_so = df_so_final_real["total_so_row"].sum()
 
 
     df_pr_final_real["disc_per_unit"] = df_pr_final_real["item_price"] * (df_pr_final_real["item_discount"] / 100)
@@ -1192,13 +1227,13 @@ def main():
     if selected_doc_type == "PR":
         with col_kiri:
             with st.container(border=True):
-                st.subheader("📊 Detail PR")
+                st.subheader("📊 Detail SO")
 
                 c1, c2 = st.columns(2)
                 with c1:
-                    metric_card("Total PR", f"Rp {total_pr:,.0f}")
+                    metric_card("Total SO", f"Rp {total_so:,.0f}")
                 with c2:
-                    metric_card("PR Balance", f"Rp {total_pr_unpr:,.0f}")
+                    metric_card("SO Balance", f"Rp {total_so_unpr:,.0f}")
 
                 c1, c2 = st.columns(2)
                 with c1:
