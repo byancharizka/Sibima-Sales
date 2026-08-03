@@ -1257,7 +1257,7 @@ def main():
     # =====================================================
     # LEFT - PR
     # =====================================================
-    if selected_doc_type == "PR":
+    if selected_doc_type == "SO":
         with col_kiri:
             with st.container(border=True):
                 st.subheader("📊 Detail SO")
