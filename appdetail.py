@@ -998,7 +998,8 @@ def main():
     #SO
     df_so_final = df_so_final.rename(columns={
         #"item_pic_procurement_name": "PIC Procurement",
-        "status_description": "Status"
+        "status_description": "Status",
+        "pic_sales_name" : "PIC Sales"
     })
     #PR
     df_pr_final = df_pr_final.rename(columns={
