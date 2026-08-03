@@ -442,7 +442,7 @@ def apply_search_filter(
     working = df.copy()
     working = normalize_text_columns(
         working,
-        ["Status", "PIC Procurement", "PIC Purchasing", "PIC", "No. SO", "No. DO", "No. PUR", "No. Transaksi"]
+        ["Status", "pic_sales_name", "PIC Purchasing", "PIC", "No. SO", "No. DO", "No. PUR", "No. Transaksi"]
     )
 
     # Filter nomor transaksi: mencari di semua kolom string
@@ -463,7 +463,7 @@ def apply_search_filter(
 
     # Filter PIC -> OR logic, bukan AND
     if search_pic:
-        pic_cols = [col for col in ["PIC Procurement", "PIC Purchasing", "PIC"] if col in working.columns]
+        pic_cols = [col for col in ["pic_sales_name", "PIC Purchasing", "PIC"] if col in working.columns]
         if pic_cols:
             mask_pic = working[pic_cols].apply(
                 lambda col: col.str.contains(search_pic.strip(), case=False, na=False)
@@ -687,7 +687,7 @@ def render_pic_heatmap(df: pd.DataFrame, pic_col: str, date_col: str, doc_col: s
         coloraxis_showscale=False,   # 🔹 sembunyikan color bar
         coloraxis_colorbar=dict(title=None),  # 🔹 hilangkan teks "sum of Jumlah Transaksi"
         xaxis_title="Bulan",
-        yaxis_title="PIC Procurement",
+        yaxis_title="pic_sales_name",
         margin=dict(l=100, r=40, t=60, b=120),
         height=500
         )
@@ -814,7 +814,7 @@ def render_pic_aging_bar(summary_df: pd.DataFrame):
 
     fig = px.bar(
     summary_df,
-    x="PIC Procurement",
+    x="pic_sales_name",
     y="Average_Aging",   # 🔹 gunakan nama baru
     text="Average_Aging",
     color="Average_Aging",
@@ -886,7 +886,7 @@ def render_pic_sla_bar(summary_df: pd.DataFrame):
 
     fig = px.bar(
         summary_df,
-        x="PIC Procurement",
+        x="pic_sales_name",
         y="SLA_Compliance",
         text="SLA_Compliance",
         color="SLA_Compliance",
@@ -968,7 +968,7 @@ def main():
         search_status = st.text_input("Cari Status 🔍", placeholder="Complete / In Progress / Approved / Need Approve")
 
     with col_head5:
-        search_pic = st.text_input("Cari PIC 🔍", placeholder="PIC Procurement / PIC Purchasing / PIC PUR")
+        search_pic = st.text_input("Cari PIC 🔍", placeholder="pic_sales_name / PIC Purchasing / PIC PUR")
 
     # ---------- LOAD DATA ----------
     if isinstance(selected_date_range, (tuple, list)) and len(selected_date_range) == 2:
@@ -1085,14 +1085,14 @@ def main():
 
 
     # ---------- ENSURE IMPORTANT COLUMNS ----------
-    df_so_f = ensure_columns(df_so_f, ["Nominal", "No. SO", "Status", "PIC Procurement"])
+    df_so_f = ensure_columns(df_so_f, ["Nominal", "No. SO", "Status", "pic_sales_name"])
     df_pr_f = ensure_columns(df_pr_f, ["Nominal", "No. PR", "Status", "PIC Procurement"])
     df_po_f = ensure_columns(df_po_f, ["Nominal"])
     df_grn_f = ensure_columns(df_grn_f, ["Nominal"])
     df_do_f = ensure_columns(df_do_f, ["Nominal", "No. DO", "PIC Purchasing"])
     df_npr_f = ensure_columns(df_npr_f, ["Status", "Sales"])
     #df_pur_f = ensure_columns(df_pur_f, ["No. PUR", "PIC", "Status"])
-    df_so_final_real = ensure_columns(df_so_final_real, ["PIC Procurement", "transaction_number","Status", "price", "quantity", "discount", "transaction_total", "tax1_percentage", "tax2_percentage"])
+    df_so_final_real = ensure_columns(df_so_final_real, ["pic_sales_name", "transaction_number","Status", "price", "quantity", "discount", "transaction_total", "tax1_percentage", "tax2_percentage"])
     df_pr_final_real = ensure_columns(df_pr_final_real, ["PIC Procurement", "transaction_number","Status", "price", "quantity", "discount", "transaction_total", "tax1_percentage", "tax2_percentage"])
     df_do_final_real = ensure_columns(df_do_final_real, ["PIC Procurement", "transaction_number","Status", "price", "quantity", "discount", "transaction_total", "tax1_percentage", "tax2_percentage"])
 
@@ -1170,7 +1170,7 @@ def main():
     avg_nominal_so = safe_mean(df_so_f, "Nominal")
     avg_nominal_do = safe_mean(df_do_f, "Nominal")
 
-    top_pic_so = get_top_pic(df_so_f, "PIC Procurement", "No. SO")
+    top_pic_so = get_top_pic(df_so_f, "pic_sales_name", "No. SO")
     top_pic_pr = get_top_pic(df_pr_f, "PIC Procurement", "No. PR")
     top_pic_do = get_top_pic(df_do_f, "PIC Procurement", "No. DO")
     #top_pic_pur = get_top_pic(df_pur_f, "PIC", "No. PUR")
@@ -1294,19 +1294,19 @@ def main():
                     st.subheader("🍩 Proporsi Nominal SO Balance per Status")
                     render_status_pie(so_summary, "Persentase Distribusi Nominal SO Balance")
 
-            pic_summary_so = summarize_pic_status(df_so_f, "PIC Procurement", "No. SO")
+            pic_summary_so = summarize_pic_status(df_so_f, "pic_sales_name", "No. SO")
             with st.container(border=True):
-                st.subheader("👤 Analisis Transaksi SO Balance per PIC Procurement & per Status")
+                st.subheader("👤 Analisis Transaksi SO Balance per pic_sales_name & per Status")
                 render_pic_bar(
                     summary_df=pic_summary_so,
-                    x_col="PIC Procurement",
+                    x_col="pic_sales_name",
                     y_col="Jumlah_Doc",
                     color_col="Status",
                 )
 
             with st.container(border=True):
-                st.subheader("🔥 Heatmap SO Balance - Aktivitas PIC Procurement")
-                render_pic_heatmap(df_so_f, "PIC Procurement", "transaction_date", "No. SO", "Heatmap Aktivitas PIC Procurement per Bulan")
+                st.subheader("🔥 Heatmap SO Balance - Aktivitas PIC Sales")
+                render_pic_heatmap(df_so_f, "pic_sales_name", "transaction_date", "No. SO", "Heatmap Aktivitas PIC Sales per Bulan")
 
             # Download PR Balance by status
             with st.container(border=True):
@@ -1340,7 +1340,7 @@ def main():
             with st.container(border=True):
                 st.subheader("📥 Download Data SO Balance per PIC")
 
-                if not df_so_f.empty and "PIC Procurement" in df_so_f.columns:
+                if not df_so_f.empty and "pic_sales_name" in df_so_f.columns:
                     # Filter status hanya Need Approve, Approved, In Progress
                     df_filtered_status = df_so_f.copy()
                     #[
@@ -1349,17 +1349,17 @@ def main():
 
                     # Tambahkan opsi "Semua"
                     options = ["Semua"] + sorted(
-                        df_filtered_status["PIC Procurement"].fillna("Unassigned").astype(str).unique().tolist()
+                        df_filtered_status["pic_sales_name"].fillna("Unassigned").astype(str).unique().tolist()
                     )
 
-                    selected_pic = st.selectbox("Pilih PIC Procurement:", options, key="so_balance_pic_select")
+                    selected_pic = st.selectbox("Pilih PIC Sales:", options, key="so_balance_pic_select")
 
                     # Jika pilih "Semua", ambil semua data sesuai status
                     if selected_pic == "Semua":
                         filtered = df_filtered_status.copy()
                     else:
                         filtered = df_filtered_status[
-                            df_filtered_status["PIC Procurement"].fillna("Unassigned").astype(str) == selected_pic
+                            df_filtered_status["pic_sales_name"].fillna("Unassigned").astype(str) == selected_pic
                         ].copy()
 
                     st.download_button(
