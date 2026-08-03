@@ -374,7 +374,9 @@ def load_all_data_new(start_date=None, end_date=None) -> dict[str, pd.DataFrame]
         "so": ("sales-orders", {"date" : "transaction_date"}),
         "pr": ("purchase-requests",{}),
         "po": ("purchase-orders", {"date" : "transaction_date"}),
-        "do": ("delivery-orders",{})
+        "grn" : ("goods-receipt-notes", {}),
+        "do": ("delivery-orders",{}),
+        "si": ("sales-invoices",{})
     }
 
     result_new = {}
@@ -991,29 +993,72 @@ def main():
 
     df_so_final = data_new["so"]
     df_pr_final = data_new["pr"]
+    df_po_final = data_new["po"]
+    df_grn_final = data_new["grn"]
     df_do_final = data_new["do"]
+    df_si_final = data_new["si"]
     #df_npr_final = data_new["npr"]
 
     # Pastikan kolom PIC dan Status sesuai
     #SO
     df_so_final = df_so_final.rename(columns={
         #"item_pic_procurement_name": "PIC Procurement",
-        "status_description": "Status",
-        "pic_sales_name" : "PIC Sales"
+        "status_description": "Status_so",
+        "pic_sales_name" : "PIC Sales",
+        "item_id": "so_detail_id",
+        "transaction_number" : "transaction_number_so",
+        "item_product_id" : "product_id",
+        "item_item_name" : "item_name"
     })
     #PR
     df_pr_final = df_pr_final.rename(columns={
         "item_pic_procurement_name": "PIC Procurement",
-        "status_description": "Status"
+        "status_description": "Status_pr",
+        "item_id": "pr_detail_id",
+        "item_so_detail_id" : "so_detail_id",
+        "transaction_number" : "transaction_number_pr",
+        "item_product_id" : "product_id"
+    })
+    #PO
+    df_po_final = df_po_final.rename(columns={
+        "item_pic_procurement_name": "PIC Procurement",
+        "status_description": "Status_po",
+        "item_id": "po_detail_id",
+        "item_pr_detail_id" : "pr_detail_id",
+        "transaction_number" : "transaction_number_po",
+        "item_product_id" : "product_id"
+    })
+    #GRN
+    df_grn_final = df_grn_final.rename(columns={
+        "item_pic_procurement_name": "PIC Procurement",
+        "status_description": "Status_grn",
+        "item_id": "grn_detail_id",
+        "item_po_detail_id" : "po_detail_id",
+        "transaction_number" : "transaction_number_grn",
+        "item_product_id" : "product_id"
     })
     #DO
     df_do_final = df_do_final.rename(columns={
         "item_pic_procurement_name": "PIC Procurement",
-        "status_description": "Status"
+        "status_description": "Status_do",
+        "item_id": "do_detail_id",
+        "item_grn_detail_id" : "grn_detail_id",
+        "transaction_number" : "transaction_number_do",
+        "item_product_id" : "product_id",
+        "item_so_detail_id": "so_detail_id",
+    })
+
+    #SI
+    df_si_final = df_si_final.rename(columns={
+        "status_description": "Status_si",
+        "item_do_detail_id" : "do_detail_id",
+        "item_id": "si_detail_id",
+        "transaction_number" : "transaction_number_si",
+        "item_product_id" : "product_id"
     })
 
     df_do = df_do.rename(columns={
-        "Status DO": "Status"
+        "Status DO": "Status",
     })
 
     # Pastikan kolom tanggal sudah dalam format datetime
@@ -1048,54 +1093,56 @@ def main():
     #df_pur_f = df_pur.copy()
     df_so_final_f = df_so_final.copy()
     df_pr_final_f = df_pr_final.copy()
+    df_po_final_f = df_po_final.copy()
+    df_grn_final_f = df_grn_final.copy()
     df_do_final_f = df_do_final.copy()
+    df_si_final_f = df_si_final.copy()
     #df_npr_final_f = df_pr_final.copy()
 
     # ---------- DATE FILTER ----------
     if isinstance(selected_date_range, (tuple, list)) and len(selected_date_range) == 2:
         report_start_date, report_end_date = selected_date_range
-        df_so_f = apply_cumulative_filter(df_so_f, report_end_date)
-        df_pr_f = apply_cumulative_filter(df_pr_f, report_end_date)
-        df_po_f = apply_cumulative_filter(df_po_f, report_end_date)
-        df_grn_f = apply_cumulative_filter(df_grn_f, report_end_date)
-        df_do_f = apply_cumulative_filter(df_do_f, report_end_date)
-        df_npr_f = apply_cumulative_filter(df_npr_f, report_end_date)
-        #df_pur_f = apply_cumulative_filter(df_pur_f, report_end_date)
         df_so_final_f = apply_cumulative_filter(df_so_final_f, report_end_date)
         df_pr_final_f = apply_cumulative_filter(df_pr_final_f, report_end_date)
+        df_po_final_f = apply_cumulative_filter(df_po_final_f, report_end_date)
+        df_grn_final_f = apply_cumulative_filter(df_grn_final_f, report_end_date)
         df_do_final_f = apply_cumulative_filter(df_do_final_f, report_end_date)
+        df_si_final_f = apply_cumulative_filter(df_si_final_f, report_end_date)
         #df_npr_final_f = apply_cumulative_filter(df_npr_final_f, report_end_date)
 
-        # 🔹 Dataset baru (PR Final) pakai realisasi
-        df_so_f_real = apply_realization_filter(df_so_f, report_start_date, report_end_date)
-        df_pr_f_real = apply_realization_filter(df_pr_f, report_start_date, report_end_date)
-        df_so_final_real = apply_realization_filter(df_so_final, report_start_date, report_end_date)
-        df_pr_final_real = apply_realization_filter(df_pr_final, report_start_date, report_end_date)
-        df_do_final_real = apply_realization_filter(df_do_final, report_start_date, report_end_date)
-        #df_npr_final_real = apply_realization_filter(df_npr_final, report_start_date, report_end_date)
+
+
+        # Tetapkan tanggal awal khusus untuk SO
+        so_start_date = date(2026, 1, 11)   # mulai 11 Januari 2026
+        report_end_date = today   # atau sesuai input user
+
+        # Filter SO mulai 11 Januari 2026 sesuai periode user
+        df_so_final_real = apply_realization_filter(df_so_final, so_start_date, report_end_date)
+
+        # Dataset lain (PR, PO, GRN, DO, SI) ambil SEMUA data tanpa batasan start_date
+        df_pr_final_real = apply_cumulative_filter(df_pr_final, report_end_date)
+        df_po_final_real = apply_cumulative_filter(df_po_final, report_end_date)
+        df_grn_final_real = apply_cumulative_filter(df_grn_final, report_end_date)
+        df_do_final_real = apply_cumulative_filter(df_do_final, report_end_date)
+        df_si_final_real = apply_cumulative_filter(df_si_final, report_end_date)
 
     # ---------- SEARCH FILTER ----------
-    df_so_f = apply_search_filter(df_so_f, search_number, search_status, search_pic)
-    df_pr_f = apply_search_filter(df_pr_f, search_number, search_status, search_pic)
-    df_po_f = apply_search_filter(df_po_f, search_number, search_status, search_pic)
-    df_grn_f = apply_search_filter(df_grn_f, search_number, search_status, search_pic)
-    df_do_f = apply_search_filter(df_do_f, search_number, search_status, search_pic)
-    df_npr_f = apply_search_filter(df_npr_f, search_number, search_status, search_pic)
+    df_pr_final_f = apply_search_filter(df_pr_final_f, search_number, search_status, search_pic)
+    #df_po_f = apply_search_filter(df_po_f, search_number, search_status, search_pic)
+    #df_grn_f = apply_search_filter(df_grn_f, search_number, search_status, search_pic)
+    #df_do_f = apply_search_filter(df_do_f, search_number, search_status, search_pic)
+    #df_npr_f = apply_search_filter(df_npr_f, search_number, search_status, search_pic)
     #df_pur_f = apply_search_filter(df_pur_f, search_number, search_status, search_pic)
     #df_pr_final_real = apply_search_filter(df_pr_final_real, search_number, search_status, search_pic)
 
 
-    # ---------- ENSURE IMPORTANT COLUMNS ----------
-    df_so_f = ensure_columns(df_so_f, ["Nominal", "No. SO", "Status", "PIC Sales"])
-    df_pr_f = ensure_columns(df_pr_f, ["Nominal", "No. PR", "Status", "PIC Procurement"])
-    df_po_f = ensure_columns(df_po_f, ["Nominal"])
-    df_grn_f = ensure_columns(df_grn_f, ["Nominal"])
-    df_do_f = ensure_columns(df_do_f, ["Nominal", "No. DO", "PIC Purchasing"])
-    df_npr_f = ensure_columns(df_npr_f, ["Status", "Sales"])
     #df_pur_f = ensure_columns(df_pur_f, ["No. PUR", "PIC", "Status"])
-    df_so_final_real = ensure_columns(df_so_final_real, ["PIC Sales", "transaction_number","Status", "price", "quantity", "discount", "transaction_total", "tax1_percentage", "tax2_percentage"])
-    df_pr_final_real = ensure_columns(df_pr_final_real, ["PIC Procurement", "transaction_number","Status", "price", "quantity", "discount", "transaction_total", "tax1_percentage", "tax2_percentage"])
-    df_do_final_real = ensure_columns(df_do_final_real, ["PIC Procurement", "transaction_number","Status", "price", "quantity", "discount", "transaction_total", "tax1_percentage", "tax2_percentage"])
+    df_so_final_real = ensure_columns(df_so_final_real, ["so_detail_id", "transaction_number_so","Status", "product_id", "item_name"])
+    df_pr_final_real = ensure_columns(df_pr_final_real, ["pr_detail_id", "so_detail_id", "transaction_number_pr", "product_id"])
+    df_po_final_real = ensure_columns(df_po_final_real, ["po_detail_id", "pr_detail_id", "transaction_number_po", "product_id"])
+    df_grn_final_real = ensure_columns(df_grn_final_real, ["po_detail_id", "grn_detail_id", "transaction_number_grn", "product_id"])
+    df_do_final_real = ensure_columns(df_do_final_real, ["so_detail_id", "grn_detail_id", "do_detail_id", "transaction_number_do", "product_id"])
+    df_si_final_real = ensure_columns(df_si_final_real, ["do_detail_id", "si_detail_id", "transaction_number_si", "product_id"])
 
     df_so_f = safe_to_numeric(df_so_f, ["Nominal"])
     df_pr_f = safe_to_numeric(df_pr_f, ["Nominal"])
@@ -1106,8 +1153,8 @@ def main():
     df_so_final_real= safe_to_numeric(df_so_final_real, ["item_price", "item_discount", "item_quantity", "item_tax1_percentage", "item_tax2_percentage"])
     df_pr_final_real= safe_to_numeric(df_pr_final_real, ["item_price", "item_discount", "item_quantity", "item_tax1_percentage", "item_tax2_percentage"])
     df_do_final_real= safe_to_numeric(df_do_final_real, ["item_price", "item_discount", "item_quantity", "item_tax1_percentage", "item_tax2_percentage"])
-    
-    # ---------- METRICS ----------
+
+        # ---------- METRICS ----------
     total_so_unpr = safe_sum(df_so_f, "Nominal")
     total_pr_unpr = safe_sum(df_pr_f, "Nominal")
     total_po_unpr = safe_sum(df_po_f, "Nominal")
@@ -1118,6 +1165,12 @@ def main():
     df_so_final_real = normalize_text_columns(df_so_final_real, ["item_PIC_Procurement"])
     df_pr_final_real = normalize_text_columns(df_pr_final_real, ["item_PIC_Procurement"])
     df_do_final_real = normalize_text_columns(df_do_final_real, ["item_PIC_Procurement"])
+
+
+    df_so_final_real["disc_per_unit"] = df_so_final_real["item_price"] * (df_so_final_real["item_discount"] / 100)
+    df_so_final_real["tax_unit"] = (df_so_final_real["item_price"] - df_so_final_real["disc_per_unit"]) * (df_so_final_real["item_tax1_percentage"] / 100)
+    df_so_final_real["net_price_unit"] = df_so_final_real["item_price"] - df_so_final_real["disc_per_unit"] + df_so_final_real["tax_unit"]
+    df_so_final_real["nominal_so"] = df_so_final_real["item_quantity"] * df_so_final_real["net_price_unit"]
 
     df_so_total = df_so_final_real[
     ~df_so_final_real["Status"].isin(["Draft"])
@@ -1154,7 +1207,7 @@ def main():
     #df_do_final_real["net_price_unit"] = df_do_final_real["item_price"] - df_do_final_real["disc_per_unit"]
     #df_do_final_real["total_do_row"] = df_do_final_real["item_quantity"] * df_do_final_real["net_price_unit"]
     
-    total_so_count = safe_unique_count(df_so_final_real, "transaction_number")
+    total_so_count = safe_unique_count(df_so_final_real, "transaction_number_so")
     total_so_balance_count = safe_unique_count(df_so_f, "No. SO")
     total_so_rows = len(df_so_final_real)
     total_so_balance_rows = len(df_so_f)
@@ -1185,80 +1238,169 @@ def main():
     #df_pr_final_valid = df_pr_final_real[
     #df_pr_final_real["date_inprogress"].notna() | df_pr_final_real["date_complete"].notna()
 
-    #SO
-    df_so_final_valid = df_so_final_real[
-    df_so_final_real["Status"].isin(["Approved", "In Progress", "Complete"])
-    ].copy()
-    df_so_final_valid = apply_search_filter(df_so_final_valid, search_number, search_status, search_pic)
 
-    #Aging SO Balance
-    # Filter SO Balance hanya untuk status aktif (exclude Complete & Draft)
-    df_so_valid = df_so_final_f[
-    ~df_so_final_f["Status"].isin(["Complete", "Draft"])
-    ].copy()
-    df_so_valid = apply_search_filter(df_so_valid, search_number, search_status, search_pic)
-
-
-    # Lanjutkan proses aging hanya untuk SO yang valid
-    #Aging SO
-    df_so_final_valid = calculate_aging(df_so_final_valid, "transaction_date", prefer="approved")
-    df_so_final_valid = categorize_aging(df_so_final_valid)
-    #Aging SO Balance
-    df_so_valid = calculate_aging(df_so_valid, "transaction_date", prefer="approved")
-    df_so_valid = categorize_aging(df_so_valid)
-
-    # Filter hanya SO valid aktif, exclude Draft
-    df_so_final_valid = df_so_final_valid[
-    ~df_so_final_valid["Status"].str.contains("Draft", case=False, na=False)
-    ].copy()
-
-    #].copy()
-    #PR
-    df_pr_final_valid = df_pr_final_real[
-    df_pr_final_real["Status"].isin(["Approved", "In Progress", "Complete"])
-    ].copy()
-    df_pr_final_valid = apply_search_filter(df_pr_final_valid, search_number, search_status, search_pic)
-
-    #Aging PR Balance
-    # Filter PR Balance hanya untuk status aktif (exclude Complete & Draft)
-    df_pr_valid = df_pr_final_f[
-    ~df_pr_final_f["Status"].isin(["Complete", "Draft"])
-    ].copy()
-    df_pr_valid = apply_search_filter(df_pr_valid, search_number, search_status, search_pic)
+    # Konversi semua kolom ID menjadi integer murni
+    for col in [
+        "so_detail_id", "pr_detail_id", "po_detail_id",
+        "grn_detail_id", "do_detail_id"
+    ]:
+        for df in [
+            df_so_final_real, df_pr_final_real, df_po_final_real,
+            df_grn_final_real, df_do_final_real, df_si_final_real
+        ]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
 
 
-    #DO
-    # 🔹 Filter hanya DO yang sudah punya tanggal inprogress atau complete
-    #Aging DO
-    df_do_final_valid = df_do_final_real[
-    df_do_final_real["Status"].isin(["Approved", "In Progress", "Complete"])
-    ].copy()
-    df_do_final_valid = apply_search_filter(df_do_final_valid, search_number, search_status, search_pic)
-
-    #Aging DO Balance
-    # Filter DO Balance hanya untuk status aktif (exclude Complete & Draft)
-    df_do_valid = df_do_final_f[
-    ~df_do_final_f["Status"].isin(["Complete", "Draft"])
-    ].copy()
-    df_do_valid = apply_search_filter(df_do_valid, search_number, search_status, search_pic)
+    #so_pr = df_so_final_real.merge(df_pr_final_real, left_on='detail_id', right_on='so_detail_id', how='outer')
+    #pr_po = so_pr.merge(df_po_final_real, left_on='pr_detail_id', right_on='pr_detail_id', how='outer')
+    #po_grn = pr_po.merge(df_grn_final_real, left_on='po_detail_id', right_on='po_detail_id', how='outer')
+    #grn_do = po_grn.merge(df_do_final_real, left_on='grn_detail_id', right_on='grn_detail_id', how='outer')
+    #final_merge = grn_do.merge(df_si_final_real, left_on='do_detail_id', right_on='do_detail_id', how='outer')
 
 
-    # Lanjutkan proses aging hanya untuk DO yang valid
-    #Aging DO
-    df_do_final_valid = calculate_aging(df_do_final_valid, "transaction_date", prefer="approved")
-    df_do_final_valid = categorize_aging(df_do_final_valid)
-    #Aging DO Balance
-    df_do_valid = calculate_aging(df_do_valid, "transaction_date", prefer="approved")
-    df_do_valid = categorize_aging(df_do_valid)
+    # Set Subset (Sertakan transaction_date dan beri nama yang spesifik)
+    df_so_subset = df_so_final_real[[
+        "so_detail_id", "transaction_number_so", "transaction_date", "Status_so","product_id","item_name", "item_price", "item_quantity", "item_discount",
+    "item_tax1_percentage","nominal_so",
+    ]].rename(columns={
+        "transaction_date": "transaction_date_so"
+    })
 
-    # Filter hanya DO valid aktif, exclude Draft
-    df_do_final_valid = df_do_final_valid[
-    ~df_do_final_valid["Status"].str.contains("Draft", case=False, na=False)
-    ].copy()
+    df_pr_subset = df_pr_final_real[[
+        "so_detail_id", "pr_detail_id", "transaction_number_pr", "transaction_date", "Status_pr", "product_id", "PIC Procurement"
+    ]].rename(columns={"transaction_date": "transaction_date_pr"})
+
+    df_po_subset = df_po_final_real[[
+        "pr_detail_id", "po_detail_id", "transaction_number_po", "transaction_date", "Status_po", "product_id"
+    ]].rename(columns={"transaction_date": "transaction_date_po"})
+
+    df_grn_subset = df_grn_final_real[[
+        "po_detail_id", "grn_detail_id", "transaction_number_grn", "transaction_date", "Status_grn", "product_id", "vendor_name"
+    ]].rename(columns={"transaction_date": "transaction_date_grn"})
+
+    df_do_subset = df_do_final_real[[
+        "so_detail_id", "grn_detail_id", "do_detail_id", "transaction_number_do", "transaction_date", "Status_do", "product_id"
+    ]].rename(columns={"transaction_date": "transaction_date_do"})
+
+    df_si_subset = df_si_final_real[[
+        "do_detail_id", "si_detail_id", "transaction_number_si", "transaction_date", "Status_si", "product_id"
+    ]].rename(columns={"transaction_date": "transaction_date_si"})
+
+    # 1. Merge SO ke PR
+    # Agar lebih presisi, kita gunakan merge berbasis so_detail_id & product_id
+    so_pr = df_so_subset.merge(
+        df_pr_subset[df_pr_subset["so_detail_id"].notna()],
+        how="left",
+        on=["so_detail_id", "product_id"],
+        suffixes=("", "_pr")
+    )
+
+    # 2. Merge PR ke PO
+    pr_po = so_pr.merge(
+        df_po_subset[df_po_subset["pr_detail_id"].notna()],
+        how="left",
+        on=["pr_detail_id", "product_id"],
+        suffixes=("", "_po")
+    )
+
+    # 3. Merge PO ke GRN
+    po_grn = pr_po.merge(
+        df_grn_subset[df_grn_subset["po_detail_id"].notna()],
+        how="left",
+        on=["po_detail_id", "product_id"],
+        suffixes=("", "_grn")
+    )
+
+    # 4. JALUR A: Join GRN -> DO (Hanya jika grn_detail_id ada)
+    po_grn_do_via_grn = po_grn.merge(
+        df_do_subset[df_do_subset["grn_detail_id"].notna()].drop(columns=["so_detail_id"], errors="ignore"),
+        how="left",
+        on=["grn_detail_id", "product_id"],
+        suffixes=("", "_do_grn")
+    )
+
+    # 5. JALUR B: Join SO -> DO Direct (Hanya jika DO tersebut punya so_detail_id)
+    df_do_direct_so = df_do_subset[df_do_subset["so_detail_id"].notna()].copy()
+    
+    final_do_step = po_grn_do_via_grn.merge(
+        df_do_direct_so,
+        how="left",
+        on=["so_detail_id", "product_id"],
+        suffixes=("", "_direct_so")
+    )
+
+    # 6. COALESCE: Jika do_detail_id dari GRN kosong, isi dari Direct SO
+    for col_base in ["do_detail_id", "transaction_number_do", "Status_do", "transaction_date_do"]:
+        col_direct = f"{col_base}_direct_so"
+        if col_direct in final_do_step.columns:
+            final_do_step[col_base] = final_do_step[col_base].fillna(final_do_step[col_direct])
+            final_do_step.drop(columns=[col_direct], inplace=True)
+
+    # Bersihkan kolom duplikat grn_detail_id dari direct_so jika ada
+    if "grn_detail_id_direct_so" in final_do_step.columns:
+        final_do_step.drop(columns=["grn_detail_id_direct_so"], inplace=True)
+
+    # 7. Join DO -> SI (Hanya jika do_detail_id ada)
+    final_merge = final_do_step.merge(
+        df_si_subset[df_si_subset["do_detail_id"].notna()],
+        how="left",
+        on=["do_detail_id", "product_id"],
+        suffixes=("", "_si")
+    )
+
+    # 8. Saring hanya SO yang valid
+    final_merge = final_merge[
+        final_merge["so_detail_id"].notna() &
+        final_merge["transaction_number_so"].notna()
+    ]
+
+    # Pastikan kolom detail_id sudah ada di hasil merge
+    # Misalnya: so_detail_id, pr_detail_id, po_detail_id, grn_detail_id, do_detail_id, si_detail_id
+
+    def get_item_status(row):
+        if pd.notna(row.get('si_detail_id')):
+            return '✅ Sudah sampai Sales Invoice'
+        elif pd.notna(row.get('do_detail_id')):
+            return '🚚 Sudah sampai Delivery Order'
+        elif pd.notna(row.get('grn_detail_id')):
+            return '📦 Sudah sampai Goods Receipt'
+        elif pd.notna(row.get('po_detail_id')):
+            return '📝 Sudah sampai Purchase Order'
+        elif pd.notna(row.get('pr_detail_id')):
+            return '📄 Masih di Purchase Request'
+        else:
+            return '⏳ Belum diproses'
+
+    # Tambahkan kolom status_progres ke DataFrame final
+    final_merge['status_progres'] = final_merge.apply(get_item_status, axis=1)
+    final_merge = apply_search_filter(final_merge, search_number, search_status, search_pic)
+
+
+    # Item SO yang sudah mempunyai DO
+    so_sudah_do = set(
+        final_merge.loc[
+            final_merge["do_detail_id"].notna(),
+            "so_detail_id"
+        ].dropna()
+    )
+
+    # Item SO yang sama sekali belum mempunyai DO
+    df_so_belum_do = (
+        final_merge[
+            ~final_merge["so_detail_id"].isin(so_sudah_do)
+        ]
+        .drop_duplicates(subset=["so_detail_id"])
+        .copy()
+    )
+
+    total_item_belum_do = df_so_belum_do["so_detail_id"].nunique()
+    total_dokumen_belum_do = df_so_belum_do["transaction_number_so"].nunique()
+    total_nominal_so_belum_do = df_so_belum_do["nominal_so"].sum()
 
     
     # =====================================================
-    # LEFT - PR
+    # LEFT - SO
     # =====================================================
     if selected_doc_type == "SO":
         with col_kiri:
@@ -1276,6 +1418,12 @@ def main():
                     metric_card("Total Transaksi SO", f"{total_so_count:,}")
                 with c2:
                     metric_card("Total Transaksi SO Balance", f"{total_so_balance_count:,}")
+
+                c1, c2 = st.columns(2)
+                with c1:
+                    metric_card("Total Nominal SO belum di DOkan", f"{total_nominal_so_belum_do:,}")
+                with c2:
+                    metric_card("Total Dokumen belum DO", f"{total_dokumen_belum_do:,}")
 
 
                 #st.write("Kolom:", df_pr_final_f.columns)
