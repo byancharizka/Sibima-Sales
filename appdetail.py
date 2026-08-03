@@ -1118,12 +1118,14 @@ def main():
     df_pr_final_real = normalize_text_columns(df_pr_final_real, ["item_PIC_Procurement"])
     df_do_final_real = normalize_text_columns(df_do_final_real, ["item_PIC_Procurement"])
 
-
-    df_so_final_real["disc_per_unit"] = df_so_final_real["item_price"] * (df_so_final_real["item_discount"] / 100)
-    df_so_final_real["tax_unit"] = (df_so_final_real["item_price"] - df_so_final_real["disc_per_unit"]) * (df_so_final_real["item_tax1_percentage"] / 100)
-    df_so_final_real["net_price_unit"] = df_so_final_real["item_price"] - df_so_final_real["disc_per_unit"] + df_so_final_real["tax_unit"]
-    df_so_final_real["total_so_row"] = df_so_final_real["item_quantity"] * df_so_final_real["net_price_unit"]
-    total_so = df_so_final_real["total_so_row"].sum()
+    df_so_total = df_so_final_real[
+    ~df_so_final_real["Status"].isin(["Draft"])
+    ].copy()
+    df_so_total["disc_per_unit"] = df_so_total["item_price"] * (df_so_total["item_discount"] / 100)
+    df_so_total["tax_unit"] = (df_so_total["item_price"] - df_so_total["disc_per_unit"]) * (df_so_total["item_tax1_percentage"] / 100)
+    df_so_total["net_price_unit"] = df_so_total["item_price"] - df_so_total["disc_per_unit"] + df_so_total["tax_unit"]
+    df_so_total["total_so_row"] = df_so_total["item_quantity"] * df_so_total["net_price_unit"]
+    total_so = df_so_total["total_so_row"].sum()
 
 
     df_pr_final_real["disc_per_unit"] = df_pr_final_real["item_price"] * (df_pr_final_real["item_discount"] / 100)
@@ -1406,8 +1408,8 @@ def main():
                 st.subheader("⏳ Distribusi Aging SO Balance")
                 render_aging_bar(df_so_valid, "transaction_number", chart_key="aging_so_outstanding")
 
-                pic_aging_summary = summarize_pic_aging(df_so_valid, "PIC Procurement", "transaction_number")
-                pic_aging_summary_final = summarize_pic_aging(df_so_final_valid, "PIC Procurement", "transaction_number")
+                pic_aging_summary = summarize_pic_aging(df_so_valid, "PIC Sales", "transaction_number")
+                pic_aging_summary_final = summarize_pic_aging(df_so_final_valid, "PIC Sales", "transaction_number")
 
             with st.container(border=True):
                 st.subheader("👥 Rata-rata Proses SO")
