@@ -11,6 +11,7 @@ import streamlit as st
 import plotly.graph_objects as go
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
+import re
 
 # =========================================================
 # 1) PAGE CONFIG - WAJIB PALING ATAS
@@ -985,7 +986,7 @@ def main():
 
 
     #df_pur_f = ensure_columns(df_pur_f, ["No. PUR", "PIC", "Status"])
-    df_so_final_real = ensure_columns(df_so_final_real, ["so_detail_id", "transaction_number_so","Status", "product_id", "item_name"])
+    df_so_final_real = ensure_columns(df_so_final_real, ["so_detail_id", "transaction_number_so","Status_so", "product_id", "item_name"])
     df_pr_final_real = ensure_columns(df_pr_final_real, ["pr_detail_id", "so_detail_id", "transaction_number_pr", "product_id"])
     df_po_final_real = ensure_columns(df_po_final_real, ["po_detail_id", "pr_detail_id", "transaction_number_po", "product_id"])
     df_grn_final_real = ensure_columns(df_grn_final_real, ["po_detail_id", "grn_detail_id", "transaction_number_grn", "product_id"])
@@ -1020,9 +1021,33 @@ def main():
     df_so_final_real["net_price_unit"] = df_so_final_real["item_price"] - df_so_final_real["disc_per_unit"] + df_so_final_real["tax_unit"]
     df_so_final_real["nominal_so"] = df_so_final_real["item_quantity"] * df_so_final_real["net_price_unit"]
 
-    df_so_total = df_so_final_real[
-    ~df_so_final_real["Status"].isin(["Draft"])
-    ].copy()
+
+    df_so_final_real["Status_so"] = (
+    df_so_final_real["Status_so"]
+    .fillna("")
+    .astype(str)
+    .str.strip()
+    )
+    #df_so_total = df_so_final_real[
+    #~df_so_final_real["Status"].isin(["Draft"])
+    #].copy()
+    status_filter = ['In Progress', 'Approved', 'Complete']
+    df_so_total = df_so_final_real[df_so_final_real['Status_so'].isin(status_filter)]
+    keyword_to_exclude = ['Jasa', 'Biaya', 'Admin', 'Pengiriman']
+    pattern = '|'.join([re.escape(word) for word in keyword_to_exclude])
+
+    # Filter Keyword Tahap  (Hanya untuk revenue) ---
+    so_total_keyword = [df_so_total]
+    processed_keyword_so_total = []
+
+    for df in so_total_keyword :
+        if 'item_name' in df.columns:
+            df = df[~df['item_name'].astype(str).str.contains(pattern, case=False, na=False)]
+        processed_keyword_so_total.append(df)
+
+    # PERBAIKAN: Ambil elemen pertama dari list, jangan simpan list-nya ke variabel df_so_f
+    df_so_total = processed_keyword_so_total[0] 
+
     df_so_total["disc_per_unit"] = df_so_total["item_price"] * (df_so_total["item_discount"] / 100)
     df_so_total["tax_unit"] = (df_so_total["item_price"] - df_so_total["disc_per_unit"]) * (df_so_total["item_tax1_percentage"] / 100)
     df_so_total["net_price_unit"] = df_so_total["item_price"] - df_so_total["disc_per_unit"] + df_so_total["tax_unit"]
@@ -1104,7 +1129,7 @@ def main():
 
 
     # Set Subset (Sertakan transaction_date dan beri nama yang spesifik)
-    df_so_subset = df_so_final_real[[
+    df_so_subset = df_so_total[[
         "so_detail_id", "transaction_number_so", "transaction_date", "Status_so","product_id","item_name", "item_price", "item_quantity", "item_discount",
     "item_tax1_percentage","nominal_so",
     ]].rename(columns={
@@ -1265,19 +1290,19 @@ def main():
 
                 c1, c2 = st.columns(2)
                 with c1:
-                    metric_card("Total SO", f"Rp {total_so:,.0f}")
+                    metric_card("Total SO", f"Rp {total_so:,.0f}".replace(",", "."))
                 with c2:
-                    metric_card("SO Balance", f"Rp {total_so_unpr:,.0f}")
+                    metric_card("SO Balance", f"Rp {total_so_unpr:,.0f}".replace(",", "."))
 
                 c1, c2 = st.columns(2)
                 with c1:
                     metric_card("Total Transaksi SO", f"{total_so_count:,}")
                 with c2:
-                    metric_card("Total Transaksi SO Balance", f"{total_so_balance_count:,}")
+                    metric_card("Total Transaksi SO Balance", f"{total_so_balance_count:,}".replace(",", "."))
 
                 c1, c2 = st.columns(2)
                 with c1:
-                    metric_card("Total Nominal SO belum di DOkan", f"{total_nominal_so_belum_do:,}")
+                    metric_card("Total Nominal SO belum di DOkan",f"Rp {total_nominal_so_belum_do:,.0f}".replace(",", "."))
                 with c2:
                     metric_card("Total Dokumen belum DO", f"{total_dokumen_belum_do:,}")
 
@@ -1323,7 +1348,7 @@ def main():
                         with c2:
                             metric_card(
                                 "Revenue Customer Pareto",
-                                f"Rp {revenue_pareto:,.0f}"
+                                f"Rp {revenue_pareto:,.0f}".replace(",", ".")
                             )
 
                         with c3:
