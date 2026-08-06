@@ -1105,7 +1105,8 @@ def main():
     #top_pic_pur = get_top_pic(df_pur_f, "PIC", "No. PUR")
 
     # ---------- LAYOUT ----------
-    col_kiri, col_tengah, col_kanan = st.columns([1, 1, 1], gap="small")
+    #col_kiri, col_tengah, col_kanan = st.columns([1, 1, 1], gap="small")
+    col_kiri, col_tengah = st.columns([1, 1], gap="small")
 
 
     # Konversi semua kolom ID menjadi integer murni
