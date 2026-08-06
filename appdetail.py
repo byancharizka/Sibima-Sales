@@ -1319,85 +1319,6 @@ def main():
                 with c3:
                     metric_card("PIC Terbanyak", top_pic_so)
 
-                with st.container(border=True):
-                    st.subheader("Pareto Customer – 80% Nilai SO")
-
-                    if df_customer_pareto.empty:
-                        st.info(
-                            "Data Pareto belum tersedia. "
-                            "Pastikan kolom Customer dan nilai SO tersedia."
-                        )
-                    else:
-                        total_customer = len(df_customer_pareto)
-                        total_customer_pareto = len(df_pareto_80)
-                        revenue_pareto = df_pareto_80["Revenue"].sum()
-                        total_revenue_customer = df_customer_pareto["Revenue"].sum()
-                        kontribusi_pareto = (
-                            revenue_pareto / total_revenue_customer
-                            if total_revenue_customer > 0 else 0
-                        )
-
-                        c1, c2, c3 = st.columns(3)
-
-                        with c1:
-                            metric_card(
-                                "Customer Pareto",
-                                f"{total_customer_pareto:,} dari {total_customer:,}"
-                            )
-
-                        with c2:
-                            metric_card(
-                                "Revenue Customer Pareto",
-                                f"Rp {revenue_pareto:,.0f}".replace(",", ".")
-                            )
-
-                        with c3:
-                            metric_card(
-                                "Kontribusi Revenue",
-                                f"{kontribusi_pareto:.1%}"
-                            )
-
-                        display_pareto = df_pareto_80.copy()
-
-                        display_pareto["Revenue"] = display_pareto["Revenue"].map(
-                            lambda value: f"Rp {value:,.0f}"
-                        )
-                        display_pareto["Kontribusi"] = display_pareto["Kontribusi"].map(
-                            lambda value: f"{value:.2%}"
-                        )
-                        display_pareto["Kumulatif"] = display_pareto["Kumulatif"].map(
-                            lambda value: f"{value:.2%}"
-                        )
-
-                        st.dataframe(
-                            display_pareto,
-                            use_container_width=True,
-                            hide_index=True,
-                        )
-
-                        fig_pareto = px.bar(
-                            df_pareto_80,
-                            x="Customer",
-                            y="Revenue",
-                            color="Kategori",
-                            text="Revenue",
-                            title="Customer Penyumbang 80% Nilai SO",
-                        )
-
-                        fig_pareto.update_traces(
-                            texttemplate="Rp %{text:,.0f}",
-                            textposition="outside",
-                        )
-
-                        fig_pareto.update_layout(
-                            showlegend=False,
-                            xaxis_title="Customer",
-                            yaxis_title="Nilai SO",
-                            yaxis_tickformat=",.0f",
-                        )
-
-                        st.plotly_chart(fig_pareto, use_container_width=True)
-
 
                 so_summary = summarize_status(df_so_f, doc_col="No. SO", nominal_col="Nominal")
 
@@ -1486,7 +1407,86 @@ def main():
     # =====================================================
     # MID PR
     # =====================================================
-        #with col_tengah:
+        with col_tengah:
+            with st.container(border=True):
+                    st.subheader("Pareto Customer – 80% Nilai SO")
+
+                    if df_customer_pareto.empty:
+                        st.info(
+                            "Data Pareto belum tersedia. "
+                            "Pastikan kolom Customer dan nilai SO tersedia."
+                        )
+                    else:
+                        total_customer = len(df_customer_pareto)
+                        total_customer_pareto = len(df_pareto_80)
+                        revenue_pareto = df_pareto_80["Revenue"].sum()
+                        total_revenue_customer = df_customer_pareto["Revenue"].sum()
+                        kontribusi_pareto = (
+                            revenue_pareto / total_revenue_customer
+                            if total_revenue_customer > 0 else 0
+                        )
+
+                        c1, c2, c3 = st.columns(3)
+
+                        with c1:
+                            metric_card(
+                                "Customer Pareto",
+                                f"{total_customer_pareto:,} dari {total_customer:,}"
+                            )
+
+                        with c2:
+                            metric_card(
+                                "Revenue Customer Pareto",
+                                f"Rp {revenue_pareto:,.0f}".replace(",", ".")
+                            )
+
+                        with c3:
+                            metric_card(
+                                "Kontribusi Revenue",
+                                f"{kontribusi_pareto:.1%}"
+                            )
+
+                        display_pareto = df_pareto_80.copy()
+
+                        display_pareto["Revenue"] = display_pareto["Revenue"].map(
+                            lambda value: f"Rp {value:,.0f}"
+                        )
+                        display_pareto["Kontribusi"] = display_pareto["Kontribusi"].map(
+                            lambda value: f"{value:.2%}"
+                        )
+                        display_pareto["Kumulatif"] = display_pareto["Kumulatif"].map(
+                            lambda value: f"{value:.2%}"
+                        )
+
+                        st.dataframe(
+                            display_pareto,
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+
+                        fig_pareto = px.bar(
+                            df_pareto_80,
+                            x="Customer",
+                            y="Revenue",
+                            color="Kategori",
+                            text="Revenue",
+                            title="Customer Penyumbang 80% Nilai SO",
+                        )
+
+                        fig_pareto.update_traces(
+                            texttemplate="Rp %{text:,.0f}",
+                            textposition="outside",
+                        )
+
+                        fig_pareto.update_layout(
+                            showlegend=False,
+                            xaxis_title="Customer",
+                            yaxis_title="Nilai SO",
+                            yaxis_tickformat=",.0f",
+                        )
+
+                        st.plotly_chart(fig_pareto, use_container_width=True)
+
 
 
     # =====================================================
