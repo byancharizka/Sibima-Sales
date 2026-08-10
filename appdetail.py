@@ -1353,19 +1353,17 @@ def main():
                 with c1:
                     metric_card("Revenue", f"Rp {total_si:,.0f}".replace(",", "."))
                 with c2:
-                    metric_card("SO Balance", f"Rp {total_so_unpr:,.0f}".replace(",", "."))
+                    metric_card("Total Item SO", f"{total_so_rows:,}")
 
 
                 #st.write("Kolom:", df_pr_final_f.columns)
                 #st.write("Contoh tanggal:", df_pr_final_f["transaction_date"].head())
                 #st.write(df_pr_final_f[["item_price", "item_discount", "item_quantity"]].head())
 
-                c1, c2, c3 = st.columns(3)
+                c1, c2 = st.columns(2)
                 with c1:
-                    metric_card("Total Item SO", f"{total_so_rows:,}")
-                with c2:
                     metric_card("Total Item SO Balance", total_so_balance_rows)
-                with c3:
+                with c2:
                     metric_card("PIC Terbanyak", top_pic_so)
 
 
