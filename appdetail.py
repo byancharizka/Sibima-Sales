@@ -900,18 +900,20 @@ def main():
     #SI
     df_si_final = df_si_final.rename(columns={
         "status_description": "Status_si",
-        "item_do_detail_id" : "do_detail_id",
+        "item_do_detail_id": "do_detail_id",
         "item_id": "si_detail_id",
-        "transaction_number" : "transaction_number_si",
-        "item_product_id" : "product_id"
-    })
+        "transaction_number": "transaction_number_si",
+        "item_product_id": "product_id",
+        "customer_name": "Customer",
+        "item_item_name": "item_name"
+})
 
     df_do = df_do.rename(columns={
         "Status DO": "Status",
     })
 
     # Pastikan kolom tanggal sudah dalam format datetime
-    #DO
+    #SO
     df_so_final = safe_to_datetime(df_so_final, "transaction_date")
     df_so_final = safe_to_datetime(df_so_final, "date_approved")
     df_so_final = safe_to_datetime(df_so_final, "date_inprogress")
@@ -931,6 +933,11 @@ def main():
     #df_npr_final = safe_to_datetime(df_npr_final, "date_approved")
     #df_npr_final = safe_to_datetime(df_npr_final, "date_inprogress")
     #df_npr_final = safe_to_datetime(df_npr_final, "date_complete")
+    #SI
+    df_si_final = safe_to_datetime(df_si_final, "transaction_date")
+    df_si_final = safe_to_datetime(df_si_final, "date_approved")
+    df_si_final = safe_to_datetime(df_si_final, "date_inprogress")
+    df_si_final = safe_to_datetime(df_si_final, "date_complete")
 
     # ---------- DEFAULT SAFE COPY ----------
     df_so_f = df_so.copy()
@@ -1002,6 +1009,7 @@ def main():
     df_so_final_real= safe_to_numeric(df_so_final_real, ["item_price", "item_discount", "item_quantity", "item_tax1_percentage", "item_tax2_percentage"])
     df_pr_final_real= safe_to_numeric(df_pr_final_real, ["item_price", "item_discount", "item_quantity", "item_tax1_percentage", "item_tax2_percentage"])
     df_do_final_real= safe_to_numeric(df_do_final_real, ["item_price", "item_discount", "item_quantity", "item_tax1_percentage", "item_tax2_percentage"])
+    df_si_final_real= safe_to_numeric(df_si_final_real, ["item_price", "item_discount", "item_quantity", "item_tax1_percentage", "item_tax2_percentage"])
 
         # ---------- METRICS ----------
     total_so_unpr = safe_sum(df_so_f, "Nominal")
@@ -1053,6 +1061,40 @@ def main():
     df_so_total["net_price_unit"] = df_so_total["item_price"] - df_so_total["disc_per_unit"] + df_so_total["tax_unit"]
     df_so_total["total_so_row"] = df_so_total["item_quantity"] * df_so_total["net_price_unit"]
     total_so = df_so_total["total_so_row"].sum()
+
+
+
+    df_si_final_real["Status_si"] = (
+    df_si_final_real["Status_si"]
+    .fillna("")
+    .astype(str)
+    .str.strip()
+    )
+    #df_so_total = df_so_final_real[
+    #~df_so_final_real["Status"].isin(["Draft"])
+    #].copy()
+    status_filter2 = ['In Progress', 'Approved', 'Complete', 'Draft' ]
+    df_si_total = df_si_final_real[df_si_final_real['Status_si'].isin(status_filter2)]
+    keyword_to_exclude2 = ['Jasa', 'Biaya', 'Admin', 'Pengiriman']
+    pattern2 = '|'.join([re.escape(word) for word in keyword_to_exclude2])
+
+    # Filter Keyword Tahap  (Hanya untuk revenue) ---
+    si_total_keyword = [df_si_total]
+    processed_keyword_si_total = []
+
+    for df in si_total_keyword :
+        if 'item_name' in df.columns:
+            df = df[~df['item_name'].astype(str).str.contains(pattern2, case=False, na=False)]
+        processed_keyword_si_total.append(df)
+
+    # PERBAIKAN: Ambil elemen pertama dari list, jangan simpan list-nya ke variabel df_so_f
+    df_si_total = processed_keyword_si_total[0] 
+
+    df_si_total["disc_per_unit"] = df_si_total["item_price"] * (df_si_total["item_discount"] / 100)
+    df_si_total["tax_unit"] = (df_si_total["item_price"] - df_si_total["disc_per_unit"]) * (df_si_total["item_tax1_percentage"] / 100)
+    df_si_total["net_price_unit"] = df_si_total["item_price"] - df_si_total["disc_per_unit"] + df_si_total["tax_unit"]
+    df_si_total["total_si_row"] = df_si_total["item_quantity"] * df_si_total["net_price_unit"]
+    total_si = df_si_total["total_si_row"].sum()
 
 
     df_pr_final_real["disc_per_unit"] = df_pr_final_real["item_price"] * (df_pr_final_real["item_discount"] / 100)
@@ -1269,10 +1311,10 @@ def main():
     total_nominal_so_belum_do = df_so_belum_do["nominal_so"].sum()
 
     df_customer_pareto = build_customer_pareto(
-    df_so_total,
+    df_si_total,
     customer_col="Customer",
-    revenue_col="total_so_row",
-    transaction_col="transaction_number_so",
+    revenue_col="total_si_row",
+    transaction_col="transaction_number_si",
     threshold=0.80,
 )
 
@@ -1306,6 +1348,12 @@ def main():
                     metric_card("Total Nominal SO belum di DOkan",f"Rp {total_nominal_so_belum_do:,.0f}".replace(",", "."))
                 with c2:
                     metric_card("Total Dokumen belum DO", f"{total_dokumen_belum_do:,}")
+
+                c1, c2 = st.columns(2)
+                with c1:
+                    metric_card("Revenue", f"Rp {total_si:,.0f}".replace(",", "."))
+                with c2:
+                    metric_card("SO Balance", f"Rp {total_so_unpr:,.0f}".replace(",", "."))
 
 
                 #st.write("Kolom:", df_pr_final_f.columns)
@@ -1410,12 +1458,12 @@ def main():
     # =====================================================
         with col_tengah:
             with st.container(border=True):
-                    st.subheader("Pareto Customer – 80% Nilai SO")
+                    st.subheader("Pareto Customer – 80% Nilai Revenue")
 
                     if df_customer_pareto.empty:
                         st.info(
                             "Data Pareto belum tersedia. "
-                            "Pastikan kolom Customer dan nilai SO tersedia."
+                            "Pastikan kolom Customer dan nilai SI tersedia."
                         )
                     else:
                         total_customer = len(df_customer_pareto)
@@ -1471,7 +1519,7 @@ def main():
                             y="Revenue",
                             color="Kategori",
                             text="Revenue",
-                            title="Customer Penyumbang 80% Nilai SO",
+                            title="Customer Penyumbang 80% Nilai SI",
                         )
 
                         fig_pareto.update_traces(
