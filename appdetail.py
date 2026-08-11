@@ -818,7 +818,7 @@ def main():
         search_status = st.text_input("Cari Status 🔍", placeholder="Complete / In Progress / Approved / Need Approve")
 
     with col_head5:
-        search_pic = st.text_input("Cari PIC 🔍", placeholder="PIC Sales / PIC Purchasing / PIC PUR")
+        search_pic = st.text_input("Cari PIC 🔍", placeholder="PIC Sales")
 
     # ---------- LOAD DATA ----------
     if isinstance(selected_date_range, (tuple, list)) and len(selected_date_range) == 2:
