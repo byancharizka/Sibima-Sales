@@ -812,7 +812,7 @@ def main():
         selected_doc_type = st.selectbox("Pilih Jenis Dokumen 📑", ["SO", "DO", "NPR", "PUR"])
 
     with col_head3:
-        search_number = st.text_input("Cari Nomor Transaksi 🔍", placeholder="No. SO / No. DO / No. NPR / No. PUR")
+        search_number = st.text_input("Cari Nomor Transaksi 🔍", placeholder="No. SO")
 
     with col_head4:
         search_status = st.text_input("Cari Status 🔍", placeholder="Complete / In Progress / Approved / Need Approve")
