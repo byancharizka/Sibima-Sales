@@ -1002,6 +1002,8 @@ def main():
     # ---------- SEARCH FILTER ----------
     df_so_final_f = apply_search_filter(df_so_final_f, search_number, search_status, search_pic)
     df_pr_final_f = apply_search_filter(df_pr_final_f, search_number, search_status, search_pic)
+    df_so_final_real = apply_search_filter(df_so_final_real, search_number, search_status, search_pic)
+    df_so_f = apply_search_filter(df_so_f,search_number,search_status,search_pic)
     #df_po_f = apply_search_filter(df_po_f, search_number, search_status, search_pic)
     #df_grn_f = apply_search_filter(df_grn_f, search_number, search_status, search_pic)
     #df_do_f = apply_search_filter(df_do_f, search_number, search_status, search_pic)
@@ -1191,7 +1193,7 @@ def main():
 
     # Set Subset (Sertakan transaction_date dan beri nama yang spesifik)
     df_so_subset = df_so_total[[
-        "so_detail_id", "transaction_number_so", "transaction_date", "Status_so","product_id","item_name", "item_price", "item_quantity", "item_discount",
+        "so_detail_id", "transaction_number_so", "transaction_date", "Status_so","product_id","item_name", "PIC Sales", "item_price", "item_quantity", "item_discount",
     "item_tax1_percentage","nominal_so",
     ]].rename(columns={
         "transaction_date": "transaction_date_so"
