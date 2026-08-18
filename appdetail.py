@@ -50,7 +50,7 @@ BASE_URL = {
     "brp": "https://brp.sibima.id/api/"
 }
 
-API_TOKEN = os.getenv("SIBIMA_API_TOKEN", "7e92e63988bb1333d28c756718c13f4b0d911aa4b7fc749ddf9b1a0c02d6")
+API_TOKEN = os.getenv("SIBIMA_API_TOKEN", "d06cd6acd4bff7a3e3b043d3a1b01190e39405b54d3187b1d00a8830dc6d")
 
 # Pastikan setiap URL diakhiri dengan "/"
 for key in BASE_URL:
