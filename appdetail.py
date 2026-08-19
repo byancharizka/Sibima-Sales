@@ -1557,7 +1557,7 @@ def main():
 
             # Download SO belum DO
             with st.container(border=True):
-                st.subheader("📥 Download Data SO belum DO (Periode & Status)")
+                st.subheader("📥 Download Data SO belum DO")
 
                 #if not df_so_belum_do.empty and "Status" in df_so_belum_do.columns:
                     #all_statuses = sorted([s for s in df_so_f["Status"].dropna().astype(str).unique().tolist() if s.strip()])
