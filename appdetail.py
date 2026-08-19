@@ -1773,66 +1773,6 @@ def main():
                         st.plotly_chart(fig_pareto, use_container_width=True)
 
 
-            # Download SO belum DO
-            with st.container(border=True):
-                st.subheader("📥 Download Data SO belum DO")
-
-                #if not df_so_belum_do.empty and "Status" in df_so_belum_do.columns:
-                    #all_statuses = sorted([s for s in df_so_f["Status"].dropna().astype(str).unique().tolist() if s.strip()])
-                    #selected_statuses = st.multiselect(
-                        #"Pilih Status untuk di-download:",
-                        #all_statuses,
-                        #default=all_statuses,
-                        #key="so_belumDO_status_export"
-                    #)
-
-                    #df_download_so_belumDO = df_so_belum_do[df_so_belum_do["Status"].isin(selected_statuses)].copy()
-                df_download_so_belumDO = df_so_belum_do.copy()
-
-                if not df_download_so_belumDO.empty:
-                    st.download_button(
-                        label=f"⬇️Download {len(df_download_so_belumDO):,} Baris Data (Filtered).xlsx",
-                        data=to_excel_bytes(df_download_so_belumDO, sheet_name="Data_SO"),
-                        file_name=f"Data_SO_Export_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-                    st.caption(f"Menampilkan {len(df_download_so_belumDO):,} baris data yang akan di-download.")
-                else:
-                    st.warning("Tidak ada data yang sesuai dengan filter yang dipilih.")
-            #else:
-                #st.info("Data SO belum DO tidak tersedia untuk export.")
-
-
-
-            # Download SO belum DO
-            with st.container(border=True):
-                st.subheader("📥 Download Data Pareto 80%")
-
-                #if not df_so_belum_do.empty and "Status" in df_so_belum_do.columns:
-                    #all_statuses = sorted([s for s in df_so_f["Status"].dropna().astype(str).unique().tolist() if s.strip()])
-                    #selected_statuses = st.multiselect(
-                        #"Pilih Status untuk di-download:",
-                        #all_statuses,
-                        #default=all_statuses,
-                        #key="so_belumDO_status_export"
-                    #)
-
-                    #df_download_so_belumDO = df_so_belum_do[df_so_belum_do["Status"].isin(selected_statuses)].copy()
-                df_download_pareto_80 = df_pareto_80.copy()
-
-                if not df_download_pareto_80.empty:
-                    st.download_button(
-                        label=f"⬇️Download {len(df_download_pareto_80):,} Baris Data (Filtered).xlsx",
-                        data=to_excel_bytes(df_download_pareto_80, sheet_name="Data_SO"),
-                        file_name=f"Data_pareto_Export_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-                    st.caption(f"Menampilkan {len(df_download_pareto_80):,} baris data yang akan di-download.")
-                else:
-                    st.warning("Tidak ada data yang sesuai dengan filter yang dipilih.")
-            #else:
-                #st.info("Data SO belum DO tidak tersedia untuk export.")
-
             with st.container(border=True):
                 st.subheader("Customer Concentration")
 
@@ -2010,6 +1950,66 @@ def main():
                         fig_retention,
                         use_container_width=True,
                     )
+
+            # Download SO belum DO
+            with st.container(border=True):
+                st.subheader("📥 Download Data SO belum DO")
+
+                #if not df_so_belum_do.empty and "Status" in df_so_belum_do.columns:
+                    #all_statuses = sorted([s for s in df_so_f["Status"].dropna().astype(str).unique().tolist() if s.strip()])
+                    #selected_statuses = st.multiselect(
+                        #"Pilih Status untuk di-download:",
+                        #all_statuses,
+                        #default=all_statuses,
+                        #key="so_belumDO_status_export"
+                    #)
+
+                    #df_download_so_belumDO = df_so_belum_do[df_so_belum_do["Status"].isin(selected_statuses)].copy()
+                df_download_so_belumDO = df_so_belum_do.copy()
+
+                if not df_download_so_belumDO.empty:
+                    st.download_button(
+                        label=f"⬇️Download {len(df_download_so_belumDO):,} Baris Data (Filtered).xlsx",
+                        data=to_excel_bytes(df_download_so_belumDO, sheet_name="Data_SO"),
+                        file_name=f"Data_SO_Export_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                    st.caption(f"Menampilkan {len(df_download_so_belumDO):,} baris data yang akan di-download.")
+                else:
+                    st.warning("Tidak ada data yang sesuai dengan filter yang dipilih.")
+            #else:
+                #st.info("Data SO belum DO tidak tersedia untuk export.")
+
+
+
+            # Download SO belum DO
+            with st.container(border=True):
+                st.subheader("📥 Download Data Pareto 80%")
+
+                #if not df_so_belum_do.empty and "Status" in df_so_belum_do.columns:
+                    #all_statuses = sorted([s for s in df_so_f["Status"].dropna().astype(str).unique().tolist() if s.strip()])
+                    #selected_statuses = st.multiselect(
+                        #"Pilih Status untuk di-download:",
+                        #all_statuses,
+                        #default=all_statuses,
+                        #key="so_belumDO_status_export"
+                    #)
+
+                    #df_download_so_belumDO = df_so_belum_do[df_so_belum_do["Status"].isin(selected_statuses)].copy()
+                df_download_pareto_80 = df_pareto_80.copy()
+
+                if not df_download_pareto_80.empty:
+                    st.download_button(
+                        label=f"⬇️Download {len(df_download_pareto_80):,} Baris Data (Filtered).xlsx",
+                        data=to_excel_bytes(df_download_pareto_80, sheet_name="Data_SO"),
+                        file_name=f"Data_pareto_Export_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                    st.caption(f"Menampilkan {len(df_download_pareto_80):,} baris data yang akan di-download.")
+                else:
+                    st.warning("Tidak ada data yang sesuai dengan filter yang dipilih.")
+            #else:
+                #st.info("Data SO belum DO tidak tersedia untuk export.")
 
 
     from dateutil.relativedelta import relativedelta
