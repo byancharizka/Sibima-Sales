@@ -1915,6 +1915,111 @@ def main():
                     use_container_width=True,
                 )
 
+
+            with st.container(border=True):
+                st.subheader("Customer Retention Bulanan")
+
+                if df_monthly_retention.empty:
+                    st.info("Data retention belum tersedia.")
+                else:
+                    latest_valid = df_monthly_retention[
+                        df_monthly_retention["Retention_Rate"].notna()
+                
+                    ]
+                    latest_retention = (
+                        latest_valid.iloc[-1]["Retention_Rate"]
+                        if not latest_valid.empty
+                        else 0
+                    )
+
+                    latest_row = df_monthly_retention.iloc[-1]
+
+                    c1, c2, c3, c4 = st.columns(4)
+
+                    with c1:
+                        metric_card(
+                            "Retention Terakhir",
+                            f"{latest_retention:.1%}",
+                        )
+
+                    with c2:
+                        metric_card(
+                            "Customer Aktif",
+                            f"{latest_row['Active_Customers']:,.0f}",
+                        )
+
+                    with c3:
+                        metric_card(
+                            "Customer Baru",
+                            f"{latest_row['New_Customers']:,.0f}",
+                        )
+
+                    with c4:
+                        metric_card(
+                            "Customer Kembali",
+                            f"{latest_row['Returning_Customers']:,.0f}",
+                        )
+
+                    fig_retention = go.Figure()
+
+                    fig_retention.add_trace(
+                        go.Bar(
+                            x=df_monthly_retention["Bulan_Label"],
+                            y=df_monthly_retention["New_Customers"],
+                            name="Customer Baru",
+                            marker_color="#72B7B2",
+                        )
+                    )
+
+                fig_retention.add_trace(
+                    go.Bar(
+                        x=df_monthly_retention["Bulan_Label"],
+                        y=df_monthly_retention["Returning_Customers"],
+                        name="Customer Existing",
+                        marker_color="#4C78A8",
+                    )
+                )
+
+                fig_retention.add_trace(
+                    go.Scatter(
+                        x=df_monthly_retention["Bulan_Label"],
+                        y=df_monthly_retention["Retention_Rate"],
+                        name="Retention Rate",
+                        mode="lines+markers",
+                        line=dict(color="#E45756", width=3),
+                        yaxis="y2",
+                        hovertemplate="%{y:.1%}<extra></extra>",
+                    )
+                )
+
+                fig_retention.update_layout(
+                        barmode="stack",
+                        xaxis_title="Bulan",
+                        yaxis_title="Jumlah Customer",
+                        yaxis2=dict(
+                            title="Retention Rate",
+                            tickformat=".0%",
+                        range=[0, 1.05],
+                            overlaying="y",
+                            side="right",
+                        ),
+                        legend=dict(orientation="h"),
+                    )
+
+                st.plotly_chart(
+                        fig_retention,
+                        use_container_width=True,
+                    )
+
+
+    from dateutil.relativedelta import relativedelta
+
+    history_start_date = end_date - relativedelta(months=12)
+
+    data_new = load_all_data_new(
+        start_date=history_start_date,
+        end_date=end_date,
+    )       
     # =====================================================
     # RIGHT - SO
     # =====================================================
