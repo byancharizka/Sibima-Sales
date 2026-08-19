@@ -757,7 +757,7 @@ def build_customer_pareto(
     pareto = (
         working.groupby(customer_col, as_index=False)
         .agg(
-            Total_SO=(transaction_col, "nunique"),
+            Total_SI=(transaction_col, "nunique"),
             Revenue=(revenue_col, "sum"),
         )
         .rename(columns={customer_col: "Customer"})
