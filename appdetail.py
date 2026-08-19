@@ -789,6 +789,205 @@ def build_customer_pareto(
     return pareto[output_columns]
 
 
+def build_customer_concentration(
+    df: pd.DataFrame,
+    customer_col: str = "Customer",
+    revenue_col: str = "total_si_row",
+    transaction_col: str = "transaction_number_si",
+) -> tuple[pd.DataFrame, dict]:
+    required = {customer_col, revenue_col, transaction_col}
+
+    if df.empty or not required.issubset(df.columns):
+        return pd.DataFrame(), {
+            "CR1": 0,
+            "CR5": 0,
+            "CR10": 0,
+            "HHI": 0,
+            "Total_Customer": 0,
+        }
+
+    working = df.copy()
+
+    working[customer_col] = (
+        working[customer_col]
+        .fillna("Customer Tidak Diketahui")
+        .astype(str)
+        .str.strip()
+    )
+
+    working[revenue_col] = pd.to_numeric(
+        working[revenue_col],
+        errors="coerce",
+    ).fillna(0)
+
+    working = working[working[revenue_col] > 0].copy()
+
+    if working.empty:
+        return pd.DataFrame(), {
+            "CR1": 0,
+            "CR5": 0,
+            "CR10": 0,
+            "HHI": 0,
+            "Total_Customer": 0,
+        }
+
+    summary = (
+        working.groupby(customer_col, as_index=False)
+        .agg(
+            Revenue=(revenue_col, "sum"),
+            Total_SI=(transaction_col, "nunique"),
+        )
+        .rename(columns={customer_col: "Customer"})
+        .sort_values("Revenue", ascending=False)
+        .reset_index(drop=True)
+    )
+
+    total_revenue = summary["Revenue"].sum()
+
+    summary["Share"] = summary["Revenue"] / total_revenue
+    summary["Cumulative_Share"] = summary["Share"].cumsum()
+    summary["Rank"] = range(1, len(summary) + 1)
+
+    # HHI menggunakan skala 0–10.000
+    hhi = (summary["Share"].pow(2).sum()) * 10_000
+
+    metrics = {
+        "CR1": summary.head(1)["Share"].sum(),
+        "CR5": summary.head(5)["Share"].sum(),
+        "CR10": summary.head(10)["Share"].sum(),
+        "HHI": hhi,
+        "Total_Customer": summary["Customer"].nunique(),
+    }
+
+    return summary, metrics
+
+def build_monthly_customer_retention(
+    df: pd.DataFrame,
+    customer_col: str = "Customer",
+    date_col: str = "transaction_date",
+    transaction_col: str = "transaction_number_si",
+    revenue_col: str = "total_si_row",
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    required = {
+        customer_col,
+        date_col,
+        transaction_col,
+        revenue_col,
+    }
+
+    if df.empty or not required.issubset(df.columns):
+        return pd.DataFrame(), pd.DataFrame()
+
+    working = df.copy()
+
+    working[customer_col] = (
+        working[customer_col]
+        .fillna("Customer Tidak Diketahui")
+        .astype(str)
+        .str.strip()
+    )
+
+    working[date_col] = pd.to_datetime(
+        working[date_col],
+        errors="coerce",
+    )
+
+    working[revenue_col] = pd.to_numeric(
+        working[revenue_col],
+        errors="coerce",
+    ).fillna(0)
+
+    working = working[
+        working[date_col].notna()
+        & working[customer_col].ne("")
+        & working[customer_col].ne("Customer Tidak Diketahui")
+    ].copy()
+
+    if working.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    working["Bulan"] = working[date_col].dt.to_period("M")
+
+    # Satu baris per customer per bulan
+    customer_month = (
+        working.groupby([customer_col, "Bulan"], as_index=False)
+        .agg(
+            Revenue=(revenue_col, "sum"),
+            Total_SI=(transaction_col, "nunique"),
+        )
+    )
+
+    first_month = (
+        customer_month.groupby(customer_col)["Bulan"]
+        .min()
+        .rename("Bulan_Pertama")
+        .reset_index()
+    )
+
+    customer_month = customer_month.merge(
+        first_month,
+        on=customer_col,
+        how="left",
+    )
+
+    customer_month["Tipe_Customer"] = customer_month.apply(
+        lambda row: (
+            "Customer Baru"
+            if row["Bulan"] == row["Bulan_Pertama"]
+            else "Customer Existing"
+        ),
+        axis=1,
+    )
+
+    # Periksa apakah customer aktif pada bulan sebelumnya
+    previous_activity = customer_month[[customer_col, "Bulan"]].copy()
+    previous_activity["Bulan"] = previous_activity["Bulan"] + 1
+    previous_activity["Aktif_Bulan_Sebelumnya"] = True
+
+    customer_month = customer_month.merge(
+        previous_activity,
+        on=[customer_col, "Bulan"],
+        how="left",
+    )
+
+    customer_month["Retained"] = (
+        customer_month["Aktif_Bulan_Sebelumnya"]
+        .fillna(False)
+        .astype(bool)
+    )
+
+    monthly = (
+        customer_month.groupby("Bulan", as_index=False)
+        .agg(
+            Active_Customers=(customer_col, "nunique"),
+            New_Customers=(
+                "Tipe_Customer",
+                lambda values: (values == "Customer Baru").sum(),
+            ),
+            Returning_Customers=(
+                "Tipe_Customer",
+                lambda values: (values == "Customer Existing").sum(),
+            ),
+            Retained_Customers=("Retained", "sum"),
+            Revenue=("Revenue", "sum"),
+        )
+        .sort_values("Bulan")
+    )
+
+    monthly["Previous_Active_Customers"] = (
+        monthly["Active_Customers"].shift(1)
+    )
+
+    monthly["Retention_Rate"] = (
+        monthly["Retained_Customers"]
+        / monthly["Previous_Active_Customers"]
+    )
+
+    monthly["Bulan_Label"] = monthly["Bulan"].astype(str)
+
+    return monthly, customer_month
+
+
 # =========================================================
 # 9) MAIN APP
 # =========================================================
@@ -1165,6 +1364,25 @@ def main():
     top_pic_pr = get_top_pic(df_pr_f, "PIC Procurement", "No. PR")
     top_pic_do = get_top_pic(df_do_f, "PIC Procurement", "No. DO")
     #top_pic_pur = get_top_pic(df_pur_f, "PIC", "No. PUR")
+
+    df_customer_concentration, concentration_metrics = (
+    build_customer_concentration(
+        df_si_total,
+        customer_col="Customer",
+        revenue_col="total_si_row",
+        transaction_col="transaction_number_si",
+    )
+)
+
+    df_monthly_retention, df_customer_month = (
+    build_monthly_customer_retention(
+        df_si_total,
+        customer_col="Customer",
+        date_col="transaction_date",
+        transaction_col="transaction_number_si",
+        revenue_col="total_si_row",
+    )
+)
 
     # ---------- LAYOUT ----------
     #col_kiri, col_tengah, col_kanan = st.columns([1, 1, 1], gap="small")
@@ -1615,7 +1833,87 @@ def main():
             #else:
                 #st.info("Data SO belum DO tidak tersedia untuk export.")
 
+            with st.container(border=True):
+                st.subheader("Customer Concentration")
 
+                if df_customer_concentration.empty:
+                    st.info("Data customer concentration belum tersedia.")
+                else:
+                    c1, c2, c3, c4 = st.columns(4)
+
+                    with c1:
+                        metric_card(
+                            "Top 1 Customer",
+                            f"{concentration_metrics['CR1']:.1%}",
+                        )
+
+                    with c2:
+                        metric_card(
+                            "Top 5 Customer",
+                            f"{concentration_metrics['CR5']:.1%}",
+                        )
+
+                    with c3:
+                        metric_card(
+                            "Top 10 Customer",
+                            f"{concentration_metrics['CR10']:.1%}",
+                        )
+
+                with c4:
+                        metric_card(
+                            "HHI",
+                            f"{concentration_metrics['HHI']:,.0f}",
+                        )
+
+                top_customer = df_customer_concentration.head(15).copy()
+
+                fig_concentration = go.Figure()
+
+                fig_concentration.add_trace(
+                    go.Bar(
+                        x=top_customer["Customer"],
+                        y=top_customer["Revenue"],
+                        name="Revenue",
+                            marker_color="#4C78A8",
+                            text=top_customer["Revenue"],
+                            texttemplate="Rp %{text:,.0f}",
+                            textposition="outside",
+                        )
+                    )
+
+                fig_concentration.add_trace(
+                    go.Scatter(
+                        x=top_customer["Customer"],
+                        y=top_customer["Cumulative_Share"],
+                        name="Kumulatif",
+                        mode="lines+markers",
+                        line=dict(color="#E45756", width=3),
+                        yaxis="y2",
+                        hovertemplate="%{y:.1%}<extra></extra>",
+                    )
+                )
+
+                fig_concentration.update_layout(
+                    xaxis_title="Customer",
+                    yaxis=dict(
+                        title="Revenue",
+                        tickformat=",.0f",
+                    ),
+                    yaxis2=dict(
+                        title="Kontribusi Kumulatif",
+                        tickformat=".0%",
+                        range=[0, 1.05],
+                        overlaying="y",
+                        side="right",
+                    ),
+                    legend=dict(orientation="h"),
+                    margin=dict(b=130),
+                )
+
+                st.plotly_chart(
+                    fig_concentration,
+                    use_container_width=True,
+                )
 
     # =====================================================
     # RIGHT - SO
