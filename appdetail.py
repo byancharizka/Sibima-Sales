@@ -712,14 +712,14 @@ def render_pic_heatmap(df: pd.DataFrame, pic_col: str, date_col: str, doc_col: s
 def build_customer_pareto(
     df: pd.DataFrame,
     customer_col: str = "Customer",
-    revenue_col: str = "total_si_row",
-    transaction_col: str = "transaction_number_si",
+    revenue_col: str = "total_so_row",
+    transaction_col: str = "transaction_number_so",
     threshold: float = 0.80,
 ):
     output_columns = [
         "Rank",
         "Customer",
-        "Total_SI",
+        "Total_SO",
         "Revenue",
         "Kontribusi",
         "Kumulatif",
