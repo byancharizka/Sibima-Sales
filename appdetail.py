@@ -1834,7 +1834,11 @@ def main():
                 )
 
                 fig_concentration.update_layout(
-                    xaxis_title="Customer",
+                    xaxis=dict(
+                        title="Customer",
+                        tickangle=-45,
+                        automargin=True,
+                    ),
                     yaxis=dict(
                         title="Revenue",
                         tickformat=",.0f",
@@ -1846,8 +1850,23 @@ def main():
                         overlaying="y",
                         side="right",
                     ),
-                    legend=dict(orientation="h"),
-                    margin=dict(b=130),
+
+                    # Pindahkan legend ke atas
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.08,
+                        xanchor="center",
+                        x=0.5,
+                    ),
+
+                    # Beri ruang untuk legend dan nama customer
+                    margin=dict(
+                        t=100,
+                        b=180,
+                        l=80,
+                        r=80,
+                    ),
                 )
 
                 st.plotly_chart(
