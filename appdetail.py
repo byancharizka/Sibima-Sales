@@ -42,6 +42,7 @@ today = date.today()
 DEFAULT_START_DATE = date(today.year, today.month, 1)
 DEFAULT_END_DATE = today
 REQUEST_TIMEOUT = int(os.getenv("SIBIMA_API_TIMEOUT", "120"))
+SO_BALANCE_BASE_START_DATE = date(2026, 1, 1)
 
 
 BASE_URL = {
@@ -271,6 +272,389 @@ def to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Data") -> bytes:
     return output.getvalue()
 
 
+def _safe_numeric_series(
+    df: pd.DataFrame,
+    column: str,
+    default: float = 0.0,
+) -> pd.Series:
+    """
+    Return numeric Series dengan index yang sama seperti dataframe.
+
+    Penting untuk payload API: bila kolom tidak ada, jangan return scalar 0,
+    karena scalar tidak mempunyai method .fillna(), .clip(), dsb.
+    """
+    if df is None:
+        return pd.Series(dtype="float64")
+
+    if column not in df.columns:
+        return pd.Series(default, index=df.index, dtype="float64")
+
+    return (
+        pd.to_numeric(df[column], errors="coerce")
+        .fillna(default)
+        .astype(float)
+    )
+
+
+
+def _calc_line_nominal_for_debug(df: pd.DataFrame) -> pd.Series:
+    if df is None or df.empty:
+        return pd.Series(dtype="float64")
+    qty = _safe_numeric_series(df, "item_quantity", 0.0)
+    price = _safe_numeric_series(df, "item_price", 0.0)
+    disc = _safe_numeric_series(df, "item_discount", 0.0)
+    tax = _safe_numeric_series(df, "item_tax1_percentage", 0.0)
+    disc_unit = price * (disc / 100.0)
+    tax_unit = (price - disc_unit) * (tax / 100.0)
+    return (qty * (price - disc_unit + tax_unit)).fillna(0)
+
+
+def build_revenue_debug_package(source_label: str, snapshots: dict[str, pd.DataFrame], app_total_revenue: float):
+    summary_rows = []
+    prepared_tabs = {}
+    for stage, frame in snapshots.items():
+        df = frame.copy() if frame is not None else pd.DataFrame()
+        df["Debug Revenue Row"] = _calc_line_nominal_for_debug(df) if not df.empty else pd.Series(dtype="float64")
+        prepared_tabs[stage] = df
+        date_series = pd.to_datetime(df.get("transaction_date"), errors="coerce") if "transaction_date" in df.columns else pd.Series(dtype="datetime64[ns]")
+        summary_rows.append({
+            "Stage": stage,
+            "Rows": len(df),
+            "Unique SI": int(df["transaction_number_si"].nunique()) if "transaction_number_si" in df.columns else 0,
+            "Unique SI Detail": int(df["si_detail_id"].nunique()) if "si_detail_id" in df.columns else 0,
+            "Unique Customer": int(df["Customer"].nunique()) if "Customer" in df.columns else 0,
+            "Total Qty": float(_safe_numeric_series(df, "item_quantity", 0.0).sum()) if not df.empty else 0.0,
+            "Calculated Revenue": float(pd.to_numeric(df["Debug Revenue Row"], errors="coerce").fillna(0).sum()) if not df.empty else 0.0,
+            "Min Date": date_series.min() if not date_series.empty else pd.NaT,
+            "Max Date": date_series.max() if not date_series.empty else pd.NaT,
+        })
+    summary = pd.DataFrame(summary_rows)
+    final_calc = float(prepared_tabs.get("FINAL_REVENUE", pd.DataFrame()).get("Debug Revenue Row", pd.Series(dtype=float)).sum()) if "FINAL_REVENUE" in prepared_tabs else 0.0
+    gap = final_calc - float(app_total_revenue or 0)
+    summary["Card Revenue"] = float(app_total_revenue or 0)
+    summary["Final Debug vs Card Gap"] = gap
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        summary.to_excel(writer, index=False, sheet_name="SUMMARY")
+        for stage, df in prepared_tabs.items():
+            sheet = {"RAW_SOURCE":"RAW_SI","PERIOD_FILTERED":"PERIOD_SI","STATUS_VALID":"STATUS_SI","FINAL_REVENUE":"FINAL_REVENUE"}.get(stage, stage[:31])
+            df.to_excel(writer, index=False, sheet_name=sheet[:31])
+    return summary, output.getvalue(), gap
+
+
+def build_so_balance_debug_package(source_label: str, raw_df: pd.DataFrame, filtered_df: pd.DataFrame):
+    """Audit SO Balance DO-only: NO DO + PARTIAL DO."""
+    rows = []
+    tabs = {}
+    for stage, frame in [("RAW_BALANCE", raw_df), ("AFTER_SEARCH", filtered_df)]:
+        df = frame.copy() if frame is not None else pd.DataFrame()
+        tabs[stage] = df
+        rows.append({
+            "Stage": stage,
+            "Rows": len(df),
+            "Unique SO": int(df["No. SO"].nunique()) if "No. SO" in df.columns else 0,
+            "Unique SO Detail": int(df["SO Detail ID"].nunique()) if "SO Detail ID" in df.columns else 0,
+            "Nominal Balance": float(_safe_numeric_series(df, "Nominal", 0.0).sum()) if not df.empty else 0.0,
+            "NO DO Rows": int((df.get("Balance Type", pd.Series(index=df.index, dtype="object")) == "NO DO").sum()) if not df.empty else 0,
+            "PARTIAL DO Rows": int((df.get("Balance Type", pd.Series(index=df.index, dtype="object")) == "PARTIAL DO").sum()) if not df.empty else 0,
+            "Min Date": pd.to_datetime(df.get("transaction_date"), errors="coerce").min() if "transaction_date" in df.columns else pd.NaT,
+            "Max Date": pd.to_datetime(df.get("transaction_date"), errors="coerce").max() if "transaction_date" in df.columns else pd.NaT,
+        })
+    summary = pd.DataFrame(rows)
+    status_summary = pd.DataFrame()
+    if filtered_df is not None and not filtered_df.empty and "Status" in filtered_df.columns:
+        tmp = filtered_df.copy()
+        tmp["Nominal"] = _safe_numeric_series(tmp, "Nominal", 0.0)
+        status_summary = tmp.groupby("Status", dropna=False).agg(
+            Rows=("Status", "size"),
+            Unique_SO=("No. SO", "nunique") if "No. SO" in tmp.columns else ("Status", "size"),
+            Nominal=("Nominal", "sum"),
+        ).reset_index()
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        summary.to_excel(writer, index=False, sheet_name="SUMMARY")
+        if not status_summary.empty:
+            status_summary.to_excel(writer, index=False, sheet_name="STATUS")
+        for stage, df in tabs.items():
+            df.to_excel(writer, index=False, sheet_name=stage[:31])
+    return summary, status_summary, output.getvalue()
+
+
+def build_pic_debug_excel_api(current_so: pd.DataFrame) -> bytes:
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        preview_cols = [c for c in ["transaction_number_so", "so_detail_id", "PIC Sales", "Status_so", "transaction_date"] if c in current_so.columns]
+        current_so[preview_cols].drop_duplicates().to_excel(writer, index=False, sheet_name="CURRENT_PIC")
+        if "PIC Sales" in current_so.columns:
+            s = current_so["PIC Sales"].fillna("").astype(str).str.strip()
+            summary = s[s.ne("")].value_counts().rename_axis("PIC Sales").reset_index(name="Rows")
+            summary.to_excel(writer, index=False, sheet_name="PIC_SUMMARY")
+    return output.getvalue()
+
+
+
+# =========================================================
+# TOTAL SO DEBUG HELPERS
+# =========================================================
+def _debug_canonical_key(value):
+    """Normalisasi key untuk membandingkan hasil PostgreSQL vs API."""
+    if value is None or pd.isna(value):
+        return ""
+    raw = str(value).strip()
+    if not raw or raw.lower() in {"nan", "none", "null", "<na>"}:
+        return ""
+    try:
+        number = float(raw)
+        if number.is_integer():
+            return str(int(number))
+    except Exception:
+        pass
+    return raw
+
+
+def _prepare_total_so_debug_df(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Bentuk dataframe audit yang konsisten untuk PostgreSQL maupun API.
+
+    Debug nominal memakai formula yang SAMA dengan card Total SO:
+        discount/unit = price * discount%
+        tax/unit      = (price - discount/unit) * tax1%
+        net/unit      = price - discount/unit + tax/unit
+        nominal       = qty * net/unit
+    """
+    if df is None:
+        df = pd.DataFrame()
+
+    out = df.copy()
+
+    required = [
+        "transaction_number_so", "transaction_date", "Status_so",
+        "so_detail_id", "product_id", "item_name", "PIC Sales",
+        "item_quantity", "item_price", "item_discount",
+        "item_tax1_percentage",
+    ]
+    for col in required:
+        if col not in out.columns:
+            out[col] = pd.NA
+
+    out["transaction_date"] = pd.to_datetime(
+        out["transaction_date"], errors="coerce"
+    )
+
+    # Samakan vocabulary status pada file debug.
+    out["Status_so"] = (
+        out["Status_so"]
+        .map(normalize_api_status)
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+
+    def numeric(col):
+        return pd.to_numeric(out[col], errors="coerce").fillna(0)
+
+    qty = numeric("item_quantity")
+    price = numeric("item_price")
+    discount_pct = numeric("item_discount")
+    tax1_pct = numeric("item_tax1_percentage")
+
+    out["Debug Disc Per Unit"] = price * (discount_pct / 100.0)
+    out["Debug Tax Per Unit"] = (
+        price - out["Debug Disc Per Unit"]
+    ) * (tax1_pct / 100.0)
+    out["Debug Net Price Unit"] = (
+        price - out["Debug Disc Per Unit"] + out["Debug Tax Per Unit"]
+    )
+    out["Debug Total SO Row"] = qty * out["Debug Net Price Unit"]
+
+    out["Debug SO Key"] = out["transaction_number_so"].map(_debug_canonical_key)
+    out["Debug Detail Key"] = out["so_detail_id"].map(_debug_canonical_key)
+    out["Debug Product Key"] = out["product_id"].map(_debug_canonical_key)
+    out["Compare Key"] = (
+        out["Debug SO Key"]
+        + "|" + out["Debug Detail Key"]
+        + "|" + out["Debug Product Key"]
+    )
+
+    return out
+
+
+def _total_so_debug_summary_row(stage: str, df: pd.DataFrame) -> dict:
+    prepared = _prepare_total_so_debug_df(df)
+
+    if prepared.empty:
+        return {
+            "Stage": stage,
+            "Rows": 0,
+            "Unique SO": 0,
+            "Unique SO Detail": 0,
+            "Unique Product": 0,
+            "Duplicate Compare-Key Rows": 0,
+            "Null Detail ID": 0,
+            "Null Product ID": 0,
+            "Total Qty": 0.0,
+            "Calculated Nominal": 0.0,
+            "Min Transaction Date": "-",
+            "Max Transaction Date": "-",
+        }
+
+    valid_compare_key = (
+        prepared["Debug SO Key"].ne("")
+        & prepared["Debug Detail Key"].ne("")
+        & prepared["Debug Product Key"].ne("")
+    )
+    duplicate_rows = int(
+        (
+            valid_compare_key
+            & prepared.duplicated(subset=["Compare Key"], keep=False)
+        ).sum()
+    )
+
+    dates = prepared["transaction_date"].dropna()
+    min_date = dates.min().strftime("%Y-%m-%d") if not dates.empty else "-"
+    max_date = dates.max().strftime("%Y-%m-%d") if not dates.empty else "-"
+
+    return {
+        "Stage": stage,
+        "Rows": int(len(prepared)),
+        "Unique SO": int(prepared["Debug SO Key"].replace("", pd.NA).nunique(dropna=True)),
+        "Unique SO Detail": int(prepared["Debug Detail Key"].replace("", pd.NA).nunique(dropna=True)),
+        "Unique Product": int(prepared["Debug Product Key"].replace("", pd.NA).nunique(dropna=True)),
+        "Duplicate Compare-Key Rows": duplicate_rows,
+        "Null Detail ID": int(prepared["Debug Detail Key"].eq("").sum()),
+        "Null Product ID": int(prepared["Debug Product Key"].eq("").sum()),
+        "Total Qty": float(pd.to_numeric(prepared["item_quantity"], errors="coerce").fillna(0).sum()),
+        "Calculated Nominal": float(prepared["Debug Total SO Row"].sum()),
+        "Min Transaction Date": min_date,
+        "Max Transaction Date": max_date,
+    }
+
+
+def build_total_so_debug_package(
+    source_label: str,
+    snapshots: dict[str, pd.DataFrame],
+    app_total_so: float,
+) -> tuple[pd.DataFrame, bytes, float]:
+    """
+    Buat summary + workbook audit Total SO.
+
+    Workbook dari PostgreSQL dan API memiliki struktur sheet yang sama sehingga
+    tab FINAL_COMPARE dapat dibandingkan menggunakan kolom `Compare Key`.
+    """
+    prepared = {
+        stage: _prepare_total_so_debug_df(df)
+        for stage, df in snapshots.items()
+    }
+
+    summary = pd.DataFrame([
+        _total_so_debug_summary_row(stage, df)
+        for stage, df in snapshots.items()
+    ])
+
+    final_df = prepared.get("FINAL_TOTAL_SO", pd.DataFrame()).copy()
+    final_debug_nominal = (
+        float(final_df["Debug Total SO Row"].sum())
+        if not final_df.empty and "Debug Total SO Row" in final_df.columns
+        else 0.0
+    )
+    gap_vs_card = final_debug_nominal - float(app_total_so or 0)
+
+    summary["Source"] = source_label
+    summary["Card Total SO"] = float(app_total_so or 0)
+    summary["Final Debug vs Card Gap"] = gap_vs_card
+
+    after_search = prepared.get("AFTER_SEARCH_FILTER", pd.DataFrame()).copy()
+    if not after_search.empty:
+        status_breakdown = (
+            after_search.groupby("Status_so", dropna=False)
+            .agg(
+                Rows=("Compare Key", "size"),
+                Unique_SO=("Debug SO Key", lambda s: s.replace("", pd.NA).nunique(dropna=True)),
+                Unique_Detail=("Debug Detail Key", lambda s: s.replace("", pd.NA).nunique(dropna=True)),
+                Calculated_Nominal=("Debug Total SO Row", "sum"),
+            )
+            .reset_index()
+            .sort_values("Calculated_Nominal", ascending=False)
+        )
+    else:
+        status_breakdown = pd.DataFrame(
+            columns=["Status_so", "Rows", "Unique_SO", "Unique_Detail", "Calculated_Nominal"]
+        )
+
+    # Duplicate key dicek setelah date + search filter, yaitu grain yang paling
+    # relevan sebelum status/keyword Total SO diterapkan.
+    if not after_search.empty:
+        valid_key = (
+            after_search["Debug SO Key"].ne("")
+            & after_search["Debug Detail Key"].ne("")
+            & after_search["Debug Product Key"].ne("")
+        )
+        duplicate_keys = after_search[
+            valid_key
+            & after_search.duplicated(subset=["Compare Key"], keep=False)
+        ].copy()
+        duplicate_keys = duplicate_keys.sort_values(
+            ["Compare Key", "transaction_date"], na_position="last"
+        )
+    else:
+        duplicate_keys = pd.DataFrame()
+
+    status_valid = prepared.get("STATUS_VALID", pd.DataFrame()).copy()
+    if not status_valid.empty:
+        final_indices = set(final_df.index.tolist()) if not final_df.empty else set()
+        excluded_keyword = status_valid[
+            ~status_valid.index.isin(final_indices)
+        ].copy()
+    else:
+        excluded_keyword = pd.DataFrame()
+
+    compare_columns = [
+        "Compare Key",
+        "transaction_number_so",
+        "transaction_date",
+        "Status_so",
+        "so_detail_id",
+        "product_id",
+        "item_name",
+        "PIC Sales",
+        "item_quantity",
+        "item_price",
+        "item_discount",
+        "item_tax1_percentage",
+        "Debug Disc Per Unit",
+        "Debug Tax Per Unit",
+        "Debug Net Price Unit",
+        "Debug Total SO Row",
+    ]
+    final_compare = final_df[
+        [col for col in compare_columns if col in final_df.columns]
+    ].copy() if not final_df.empty else pd.DataFrame(columns=compare_columns)
+
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        summary.to_excel(writer, index=False, sheet_name="SUMMARY")
+        status_breakdown.to_excel(writer, index=False, sheet_name="STATUS_BREAKDOWN")
+        final_compare.to_excel(writer, index=False, sheet_name="FINAL_COMPARE")
+        duplicate_keys.to_excel(writer, index=False, sheet_name="DUPLICATE_KEYS")
+        excluded_keyword.to_excel(writer, index=False, sheet_name="EXCLUDED_KEYWORD")
+
+        sheet_map = {
+            "RAW_SOURCE": "RAW_SOURCE",
+            "PERIOD_FILTERED": "PERIOD_FILTERED",
+            "AFTER_SEARCH_FILTER": "AFTER_SEARCH",
+            "STATUS_VALID": "STATUS_VALID",
+            "FINAL_TOTAL_SO": "FINAL_TOTAL_SO",
+        }
+        for stage, sheet_name in sheet_map.items():
+            prepared.get(stage, pd.DataFrame()).to_excel(
+                writer,
+                index=False,
+                sheet_name=sheet_name,
+            )
+
+    return summary, output.getvalue(), gap_vs_card
+
+
 # =========================================================
 # 6) API FETCHING
 # =========================================================
@@ -346,25 +730,21 @@ def get_api_data_new(endpoint: str, source: str = "erp", start_date=None, end_da
 
 
 def load_all_data(start_date=None, end_date=None) -> dict[str, pd.DataFrame]:
+    """Outstanding endpoints lama selain SO. SO Balance dibangun ulang dari raw SO + DO."""
     endpoint_map = {
-        "so": ("so-balance", {"Tanggal": "transaction_date"}),
         "pr": ("pr-balance", {"Tgl. PR": "transaction_date"}),
         "po": ("po-balance", {"Tgl. PO": "transaction_date"}),
         "grn": ("grn-balance", {"Tgl. GRN": "transaction_date"}),
         "do": ("do-balance", {"Tgl. DO": "transaction_date"}),
         "npr": ("outstanding-npr", {"Tanggal": "transaction_date"}),
-        #"pur": ("outstanding-pur", {"Tanggal": "transaction_date"})
     }
-
-    result = {}
+    result = {"so": pd.DataFrame()}
     for key, (endpoint, rename_map) in endpoint_map.items():
         df = get_api_data_old(endpoint, source="outstanding", start_date=start_date, end_date=end_date)
-
         if not df.empty:
             df = df.rename(columns=rename_map)
             df = safe_to_datetime(df, "transaction_date")
         result[key] = df
-
     return result
 
 
@@ -390,6 +770,488 @@ def load_all_data_new(start_date=None, end_date=None) -> dict[str, pd.DataFrame]
         result_new[key] = df
 
     return result_new
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_so_balance_source_api(start_date=None, end_date=None) -> dict[str, pd.DataFrame]:
+    """Load hanya raw SO + DO untuk membangun SO Balance DO-only."""
+    result = {}
+    for key, endpoint, rename_map in [
+        ("so", "sales-orders", {"date": "transaction_date"}),
+        ("do", "delivery-orders", {}),
+    ]:
+        df = get_api_data_new(
+            endpoint, source="erp", start_date=start_date, end_date=end_date
+        )
+        if not df.empty:
+            df = df.rename(columns=rename_map)
+            df = safe_to_datetime(df, "transaction_date")
+        result[key] = df
+    return result
+
+
+# =========================================================
+# STATUS COMPATIBILITY: API/DB CODE -> LABEL
+# =========================================================
+DB_STATUS_TO_API_LABEL = {
+    0: "Draft",
+    1: "Need Approve",
+    2: "Approved",
+    3: "In Progress",
+    4: "Complete",
+    5: "Approved",
+    6: "Approved",
+    7: "Close",
+}
+
+
+def normalize_api_status(value):
+    """Normalisasi status agar logic Total SO konsisten dengan versi PostgreSQL."""
+    if value is None or pd.isna(value):
+        return ""
+
+    raw = str(value).strip()
+    if not raw or raw.lower() in {"nan", "none", "null", "<na>"}:
+        return ""
+
+    try:
+        number = float(raw)
+        if number.is_integer():
+            code = int(number)
+            if code in DB_STATUS_TO_API_LABEL:
+                return DB_STATUS_TO_API_LABEL[code]
+    except Exception:
+        pass
+
+    key = raw.lower().replace("_", " ").replace("-", " ")
+    key = " ".join(key.split())
+    aliases = {
+        "draft": "Draft",
+        "need approve": "Need Approve",
+        "need approved": "Need Approve",
+        "need approval": "Need Approve",
+        "pending approval": "Need Approve",
+        "approved": "Approved",
+        "approved1": "Approved",
+        "approved 1": "Approved",
+        "approved2": "Approved",
+        "approved 2": "Approved",
+        "in progress": "In Progress",
+        "inprogress": "In Progress",
+        "complete": "Complete",
+        "completed": "Complete",
+        "closed": "Close",
+        "close": "Close",
+    }
+    return aliases.get(key, raw)
+
+
+SO_BALANCE_EXCLUDED_STATUSES = {"Draft", "Need Approve", "Complete"}
+
+
+def _canonical_db_key(value):
+    if value is None or pd.isna(value):
+        return None
+    raw = str(value).strip()
+    if not raw or raw.lower() in {"nan", "none", "null", "<na>"}:
+        return None
+    try:
+        f = float(raw)
+        if f.is_integer():
+            return str(int(f))
+    except Exception:
+        pass
+    return raw
+
+
+def _join_unique_text(series: pd.Series) -> str:
+    values = []
+    for value in series.dropna():
+        s = str(value).strip()
+        if s and s.lower() not in {"nan", "none", "null", "<na>"} and s not in values:
+            values.append(s)
+    return " | ".join(values)
+
+
+def _so_net_unit_price(df: pd.DataFrame) -> pd.Series:
+    """
+    Harga satuan netto SO yang aman untuk payload API yang tidak selalu
+    mengirim seluruh kolom detail.
+
+    Formula utama:
+        Discount/unit = Price * Discount %
+        Tax/unit      = (Price - Discount/unit) * Tax1 %
+        Net unit      = Price - Discount/unit + Tax/unit
+
+    Jika formula utama menghasilkan 0 tetapi API menyediakan subtotal,
+    subtotal / qty dipakai sebagai fallback.
+    """
+    if df is None or df.empty:
+        return pd.Series(dtype="float64")
+
+    qty = _safe_numeric_series(df, "item_quantity", 0.0)
+    price = _safe_numeric_series(df, "item_price", 0.0)
+    discount = _safe_numeric_series(df, "item_discount", 0.0)
+    tax1 = _safe_numeric_series(df, "item_tax1_percentage", 0.0)
+    subtotal = _safe_numeric_series(df, "item_sub_total", 0.0)
+
+    disc_per_unit = price * (discount / 100.0)
+    taxable = price - disc_per_unit
+    tax_per_unit = taxable * (tax1 / 100.0)
+    net = taxable + tax_per_unit
+
+    fallback = pd.Series(0.0, index=df.index, dtype="float64")
+    valid_qty = qty > 0
+    fallback.loc[valid_qty] = subtotal.loc[valid_qty] / qty.loc[valid_qty]
+
+    use_fallback = (net == 0) & (fallback != 0)
+    net.loc[use_fallback] = fallback.loc[use_fallback]
+    return net.fillna(0)
+
+
+def _build_so_balance_view(
+    so_df: pd.DataFrame,
+    do_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    SO BALANCE — BUSINESS RULE FINAL (DO ONLY)
+
+    Definisi:
+      1) SO yang BELUM memiliki DO valid -> NO DO
+      2) SO yang sudah memiliki DO tetapi qty DO masih < qty SO -> PARTIAL DO
+      3) SO yang qty DO-nya sudah >= qty SO -> TIDAK masuk SO Balance
+
+    PR dan SI TIDAK dipakai untuk mengurangi SO Balance.
+
+    DO valid untuk progress delivery:
+      - Approved
+      - In Progress
+      - Complete
+      - Close
+
+    DO Draft / Need Approve tidak dianggap sebagai delivery progress.
+
+    Effective DO Qty:
+      - direct DO detail yang terhubung ke SO detail adalah source utama;
+      - SO detail do_quantity dipakai sebagai fallback/cross-check bila direct link
+        tidak tersedia atau lebih kecil;
+      - SI quantity tidak dipakai.
+
+    Balance Qty = MAX(SO Qty - Effective DO Qty, 0)
+    SO Balance  = Balance Qty * Net Unit Price SO
+    """
+    output_cols = [
+        "No. SO", "PIC Sales", "Status", "Nominal", "transaction_date",
+        "SO Detail ID", "Product ID", "Item Name",
+        "SO Qty", "SO Detail DO Qty", "DO Qty (Direct Valid)",
+        "Effective DO Qty", "DO Qty", "Balance Qty",
+        "Unit Price", "Discount %", "Tax1 %", "Net Unit Price",
+        "SO Nominal", "Delivered Nominal Proxy",
+        "Balance Type", "Quantity Source", "Diagnostic",
+        "SO Detail DO Status", "Realized Qty (Diagnostic)",
+        "DO Documents", "DO Detail Count", "DO Statuses",
+    ]
+
+    if so_df is None or so_df.empty:
+        return pd.DataFrame(columns=output_cols)
+
+    so = so_df.copy()
+    do = do_df.copy() if do_df is not None else pd.DataFrame()
+
+    # ---------------------------------------------------------
+    # SO grain: satu row per current SO detail + product
+    # ---------------------------------------------------------
+    so["__so_detail_key"] = so.get(
+        "item_id", pd.Series(index=so.index, dtype="object")
+    ).map(_canonical_db_key)
+    so["__product_key"] = so.get(
+        "item_product_id", pd.Series(index=so.index, dtype="object")
+    ).map(_canonical_db_key)
+    so["__so_qty"] = _safe_numeric_series(
+        so, "item_quantity", 0.0
+    ).clip(lower=0)
+    so["__net_unit_price"] = _so_net_unit_price(so)
+    so["__so_do_qty"] = _safe_numeric_series(
+        so, "item_do_quantity", 0.0
+    ).clip(lower=0)
+    so["__realized_qty_diag"] = _safe_numeric_series(
+        so, "item_realized_quantity", 0.0
+    ).clip(lower=0)
+    so["__so_do_status_norm"] = so.get(
+        "item_do_status", pd.Series("", index=so.index, dtype="object")
+    ).map(normalize_api_status).fillna("")
+
+    valid_key = so["__so_detail_key"].notna()
+    so_valid = so.loc[valid_key].drop_duplicates(
+        subset=["__so_detail_key", "__product_key"], keep="first"
+    )
+    so_invalid = so.loc[~valid_key].copy()
+    so = pd.concat([so_valid, so_invalid], ignore_index=True, sort=False)
+
+    # ---------------------------------------------------------
+    # DO progress: ONLY valid DO statuses.
+    # Strict detail+product diprioritaskan; detail-only menjadi fallback.
+    # ---------------------------------------------------------
+    valid_do_statuses = {"Approved", "In Progress", "Complete", "Close"}
+
+    do_strict = pd.DataFrame(columns=[
+        "__so_detail_key", "__product_key", "__direct_do_qty_strict",
+        "__do_docs_strict", "__do_detail_count_strict", "__do_statuses_strict",
+    ])
+    do_detail_only = pd.DataFrame(columns=[
+        "__so_detail_key", "__direct_do_qty_detail",
+        "__do_docs_detail", "__do_detail_count_detail", "__do_statuses_detail",
+    ])
+    do_any_count = pd.DataFrame(columns=["__so_detail_key", "__linked_do_any_count"])
+
+    if not do.empty:
+        do["__so_detail_key"] = do.get(
+            "item_so_detail_id", pd.Series(index=do.index, dtype="object")
+        ).map(_canonical_db_key)
+        do["__product_key"] = do.get(
+            "item_product_id", pd.Series(index=do.index, dtype="object")
+        ).map(_canonical_db_key)
+        do["__direct_do_qty"] = _safe_numeric_series(
+            do, "item_quantity", 0.0
+        ).clip(lower=0)
+        do["__do_status_norm"] = do.get(
+            "status_description", pd.Series("", index=do.index, dtype="object")
+        ).map(normalize_api_status).fillna("")
+
+        do_linked_all = do[do["__so_detail_key"].notna()].copy()
+        if not do_linked_all.empty:
+            if "item_id" in do_linked_all.columns:
+                do_linked_all["__do_detail_key"] = do_linked_all["item_id"].map(_canonical_db_key)
+                do_linked_all = do_linked_all.drop_duplicates(
+                    subset=["__do_detail_key"], keep="first"
+                )
+            do_any_count = (
+                do_linked_all.groupby("__so_detail_key", dropna=False)
+                .size().reset_index(name="__linked_do_any_count")
+            )
+
+        do_valid = do_linked_all[
+            do_linked_all["__do_status_norm"].isin(valid_do_statuses)
+        ].copy() if not do_linked_all.empty else pd.DataFrame()
+
+        if not do_valid.empty:
+            strict_linked = do_valid[do_valid["__product_key"].notna()].copy()
+            if not strict_linked.empty:
+                do_strict = (
+                    strict_linked.groupby(
+                        ["__so_detail_key", "__product_key"], dropna=False
+                    )
+                    .agg(
+                        __direct_do_qty_strict=("__direct_do_qty", "sum"),
+                        __do_docs_strict=("transaction_number", _join_unique_text),
+                        __do_detail_count_strict=("item_id", lambda x: x.dropna().astype(str).nunique())
+                        if "item_id" in strict_linked.columns else ("__direct_do_qty", "size"),
+                        __do_statuses_strict=("__do_status_norm", _join_unique_text),
+                    )
+                    .reset_index()
+                )
+
+            do_detail_only = (
+                do_valid.groupby("__so_detail_key", dropna=False)
+                .agg(
+                    __direct_do_qty_detail=("__direct_do_qty", "sum"),
+                    __do_docs_detail=("transaction_number", _join_unique_text),
+                    __do_detail_count_detail=("item_id", lambda x: x.dropna().astype(str).nunique())
+                    if "item_id" in do_valid.columns else ("__direct_do_qty", "size"),
+                    __do_statuses_detail=("__do_status_norm", _join_unique_text),
+                )
+                .reset_index()
+            )
+
+    balance = (
+        so.merge(do_strict, how="left", on=["__so_detail_key", "__product_key"])
+          .merge(do_detail_only, how="left", on="__so_detail_key")
+          .merge(do_any_count, how="left", on="__so_detail_key")
+    )
+
+    for col in [
+        "__direct_do_qty_strict", "__direct_do_qty_detail",
+        "__do_detail_count_strict", "__do_detail_count_detail",
+        "__linked_do_any_count",
+    ]:
+        balance[col] = _safe_numeric_series(
+            balance, col, 0.0
+        )
+
+    # Strict product match first; detail-only is fallback only.
+    balance["__direct_do_qty"] = balance["__direct_do_qty_strict"].where(
+        balance["__direct_do_qty_strict"] > 0,
+        balance["__direct_do_qty_detail"],
+    ).fillna(0).clip(lower=0)
+
+    strict_used = balance["__direct_do_qty_strict"] > 0
+    balance["__do_docs"] = balance.get(
+        "__do_docs_detail", pd.Series("", index=balance.index, dtype="object")
+    ).fillna("")
+    balance.loc[strict_used, "__do_docs"] = balance.loc[
+        strict_used, "__do_docs_strict"
+    ].fillna("")
+
+    balance["__do_statuses"] = balance.get(
+        "__do_statuses_detail", pd.Series("", index=balance.index, dtype="object")
+    ).fillna("")
+    balance.loc[strict_used, "__do_statuses"] = balance.loc[
+        strict_used, "__do_statuses_strict"
+    ].fillna("")
+
+    balance["__do_detail_count"] = balance["__do_detail_count_detail"]
+    balance.loc[strict_used, "__do_detail_count"] = balance.loc[
+        strict_used, "__do_detail_count_strict"
+    ]
+    balance["__do_detail_count"] = balance["__do_detail_count"].fillna(0).astype(int)
+
+    # ---------------------------------------------------------
+    # SO detail DO qty = fallback/cross-check.
+    # If item_do_status explicitly says Draft/Need Approve, do not count it.
+    # If status is blank, keep it as fallback because some ERP rows do not expose
+    # item-level DO status even though do_quantity is maintained.
+    # ---------------------------------------------------------
+    so_detail_do_valid = (
+        balance["__so_do_status_norm"].isin(valid_do_statuses)
+        | balance["__so_do_status_norm"].eq("")
+    )
+    balance["__so_do_qty_valid"] = balance["__so_do_qty"].where(
+        so_detail_do_valid, 0.0
+    )
+
+    # Direct valid DO + SO-detail do_quantity are both operational DO evidence.
+    # Use the larger value, then cap to SO Qty.
+    balance["__effective_do_raw"] = balance[
+        ["__direct_do_qty", "__so_do_qty_valid"]
+    ].max(axis=1).fillna(0).clip(lower=0)
+    balance["__effective_do_qty"] = balance[
+        ["__effective_do_raw", "__so_qty"]
+    ].min(axis=1)
+
+    balance["__balance_qty"] = (
+        balance["__so_qty"] - balance["__effective_do_qty"]
+    ).clip(lower=0)
+
+    # ---------------------------------------------------------
+    # SO status rule tetap mengikuti business rule dashboard sebelumnya.
+    # ---------------------------------------------------------
+    balance["__normalized_so_status"] = (
+        balance.get(
+            "status_description",
+            pd.Series(index=balance.index, dtype="object"),
+        )
+        .map(normalize_api_status)
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+    balance = balance[
+        ~balance["__normalized_so_status"].isin(SO_BALANCE_EXCLUDED_STATUSES)
+    ].copy()
+
+    # Hanya NO DO atau PARTIAL DO. Fully delivered otomatis keluar.
+    balance = balance[
+        (balance["__so_qty"] > 0) & (balance["__balance_qty"] > 0)
+    ].copy()
+    if balance.empty:
+        return pd.DataFrame(columns=output_cols)
+
+    balance["__balance_type"] = "NO DO"
+    partial_mask = (
+        (balance["__effective_do_qty"] > 0)
+        & (balance["__effective_do_qty"] < balance["__so_qty"])
+    )
+    balance.loc[partial_mask, "__balance_type"] = "PARTIAL DO"
+
+    balance["__balance_nominal"] = (
+        balance["__balance_qty"] * balance["__net_unit_price"]
+    )
+    balance["__so_nominal"] = (
+        balance["__so_qty"] * balance["__net_unit_price"]
+    )
+    balance["__delivered_nominal_proxy"] = (
+        balance["__effective_do_qty"] * balance["__net_unit_price"]
+    )
+
+    def quantity_source(row):
+        direct = float(row.get("__direct_do_qty") or 0)
+        so_do = float(row.get("__so_do_qty_valid") or 0)
+        effective = float(row.get("__effective_do_raw") or 0)
+        if effective <= 0:
+            return "NO VALID DO"
+        sources = []
+        eps = 1e-9
+        if direct > 0 and abs(direct - effective) <= eps:
+            sources.append("DO_DETAIL_VALID")
+        if so_do > 0 and abs(so_do - effective) <= eps:
+            sources.append("SO_DETAIL_DO_QTY")
+        return " | ".join(sources) if sources else "DO_PROGRESS"
+
+    balance["__qty_source"] = balance.apply(quantity_source, axis=1)
+
+    def diagnostic(row):
+        notes = []
+        so_qty = float(row.get("__so_qty") or 0)
+        direct = float(row.get("__direct_do_qty") or 0)
+        so_do = float(row.get("__so_do_qty_valid") or 0)
+        eff = float(row.get("__effective_do_raw") or 0)
+        any_do = int(row.get("__linked_do_any_count") or 0)
+        if any_do > 0 and direct <= 0:
+            notes.append("ONLY DRAFT/NEED APPROVE DO OR NO VALID LINK")
+        if abs(direct - so_do) > 1e-9 and (direct > 0 or so_do > 0):
+            notes.append("DO QTY CROSS-CHECK MISMATCH")
+        if eff > so_qty + 1e-9:
+            notes.append("DO QTY > SO QTY; CAPPED")
+        if row.get("__balance_type") == "NO DO":
+            notes.append("NO VALID DO")
+        elif row.get("__balance_type") == "PARTIAL DO":
+            notes.append("PARTIAL DO")
+        if not notes:
+            notes.append("OK")
+        return " | ".join(notes)
+
+    balance["__diagnostic"] = balance.apply(diagnostic, axis=1)
+
+    out = pd.DataFrame(index=balance.index)
+    out["No. SO"] = balance.get("transaction_number")
+    out["PIC Sales"] = balance.get("pic_sales_name")
+    out["Status"] = balance["__normalized_so_status"]
+    out["Nominal"] = pd.to_numeric(
+        balance["__balance_nominal"], errors="coerce"
+    ).fillna(0)
+    out["transaction_date"] = pd.to_datetime(
+        balance.get("transaction_date"), errors="coerce"
+    )
+    out["SO Detail ID"] = balance.get("item_id")
+    out["Product ID"] = balance.get("item_product_id")
+    out["Item Name"] = balance.get("item_item_name")
+    out["SO Qty"] = balance["__so_qty"]
+    out["SO Detail DO Qty"] = balance["__so_do_qty"]
+    out["DO Qty (Direct Valid)"] = balance["__direct_do_qty"]
+    out["Effective DO Qty"] = balance["__effective_do_qty"]
+    out["DO Qty"] = balance["__effective_do_qty"]
+    out["Balance Qty"] = balance["__balance_qty"]
+    out["Unit Price"] = _safe_numeric_series(
+        balance, "item_price", 0.0
+    )
+    out["Discount %"] = _safe_numeric_series(
+        balance, "item_discount", 0.0
+    )
+    out["Tax1 %"] = _safe_numeric_series(
+        balance, "item_tax1_percentage", 0.0
+    )
+    out["Net Unit Price"] = balance["__net_unit_price"]
+    out["SO Nominal"] = balance["__so_nominal"]
+    out["Delivered Nominal Proxy"] = balance["__delivered_nominal_proxy"]
+    out["Balance Type"] = balance["__balance_type"]
+    out["Quantity Source"] = balance["__qty_source"]
+    out["Diagnostic"] = balance["__diagnostic"]
+    out["SO Detail DO Status"] = balance.get("item_do_status")
+    out["Realized Qty (Diagnostic)"] = balance["__realized_qty_diag"]
+    out["DO Documents"] = balance["__do_docs"]
+    out["DO Detail Count"] = balance["__do_detail_count"]
+    out["DO Statuses"] = balance["__do_statuses"]
+    return out.reset_index(drop=True)
 
 
 # =========================================================
@@ -1027,6 +1889,18 @@ def main():
         data_old = load_all_data()
         data_new = load_all_data_new(start_date=start_date, end_date=end_date)
 
+        # SO Balance tidak lagi memakai endpoint so-balance lama.
+        # Dibangun ulang dari raw SO + DO dengan business rule:
+        # NO DO atau PARTIAL DO saja.
+        balance_source_api = load_so_balance_source_api(
+            start_date=SO_BALANCE_BASE_START_DATE,
+            end_date=end_date,
+        )
+        data_old["so"] = _build_so_balance_view(
+            balance_source_api.get("so", pd.DataFrame()),
+            balance_source_api.get("do", pd.DataFrame()),
+        )
+
     # ---------- ASSIGN DATAFRAME ----------
     df_so = data_old["so"]
     df_pr = data_old["pr"]
@@ -1056,6 +1930,22 @@ def main():
         "item_item_name" : "item_name",
         "customer_name": "Customer",
     })
+
+    # =========================================================
+    # NORMALISASI STATUS SO SEDINI MUNGKIN
+    # =========================================================
+    # Disamakan dengan behavior versi PostgreSQL: status sudah
+    # dinormalisasi sebelum search filter dijalankan. Dengan ini
+    # status numerik/alias seperti 2, 3, 4, completed, approved1,
+    # dst. terlebih dahulu menjadi vocabulary dashboard standar.
+    if "Status_so" in df_so_final.columns:
+        df_so_final["Status_so"] = (
+            df_so_final["Status_so"]
+            .map(normalize_api_status)
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
     #PR
     df_pr_final = df_pr_final.rename(columns={
         "item_pic_procurement_name": "PIC Procurement",
@@ -1136,6 +2026,10 @@ def main():
     df_si_final = safe_to_datetime(df_si_final, "date_inprogress")
     df_si_final = safe_to_datetime(df_si_final, "date_complete")
 
+    # Snapshot raw SO source untuk audit Total SO.
+    # PostgreSQL: dapat memuat histori lebih luas; API: sesuai response endpoint.
+    debug_so_raw_source = df_so_final.copy()
+
         # ---------- EXTRACT UNIQUE PIC LIST ----------
     # Ambil list PIC Procurement unik dari df_pr_final (dan dataframe lain jika perlu)
     pic_list = []
@@ -1184,24 +2078,36 @@ def main():
 
 
 
-        # Tetapkan tanggal awal khusus untuk SO
-        so_start_date = date(2026, 1, 11)   # mulai 11 Januari 2026
-        report_end_date = today   # atau sesuai input user
+        # =====================================================
+        # TOTAL SO: IKUTI PERIODE YANG DIPILIH USER
+        # =====================================================
+        # Contoh: bila user memilih 1 Sep 2026 s/d 23 Sep 2026,
+        # maka hanya SO dengan transaction_date dalam periode tersebut
+        # yang masuk ke dataset Total SO.
+        df_so_final_real = apply_realization_filter(
+            df_so_final,
+            report_start_date,
+            report_end_date
+        )
 
-        # Filter SO mulai 11 Januari 2026 sesuai periode user
-        df_so_final_real = apply_realization_filter(df_so_final, so_start_date, report_end_date)
+        debug_so_period_filtered = df_so_final_real.copy()
 
-        # Dataset lain (PR, PO, GRN, DO, SI) ambil SEMUA data tanpa batasan start_date
+        # Dataset lain (PR, PO, GRN, DO, SI) tetap cumulative sampai end date
         df_pr_final_real = apply_cumulative_filter(df_pr_final, report_end_date)
         df_po_final_real = apply_cumulative_filter(df_po_final, report_end_date)
         df_grn_final_real = apply_cumulative_filter(df_grn_final, report_end_date)
         df_do_final_real = apply_cumulative_filter(df_do_final, report_end_date)
         df_si_final_real = apply_cumulative_filter(df_si_final, report_end_date)
+        # Metric Revenue/Pareto mengikuti date range yang dipilih.
+        df_si_metric_real = apply_realization_filter(
+            df_si_final, report_start_date, report_end_date
+        )
 
     # ---------- SEARCH FILTER ----------
     df_so_final_f = apply_search_filter(df_so_final_f, search_number, search_status, search_pic)
     df_pr_final_f = apply_search_filter(df_pr_final_f, search_number, search_status, search_pic)
     df_so_final_real = apply_search_filter(df_so_final_real, search_number, search_status, search_pic)
+    debug_so_after_search = df_so_final_real.copy()
     df_so_f = apply_search_filter(df_so_f,search_number,search_status,search_pic)
     #df_po_f = apply_search_filter(df_po_f, search_number, search_status, search_pic)
     #df_grn_f = apply_search_filter(df_grn_f, search_number, search_status, search_pic)
@@ -1218,6 +2124,7 @@ def main():
     df_grn_final_real = ensure_columns(df_grn_final_real, ["po_detail_id", "grn_detail_id", "transaction_number_grn", "product_id"])
     df_do_final_real = ensure_columns(df_do_final_real, ["so_detail_id", "grn_detail_id", "do_detail_id", "transaction_number_do", "product_id"])
     df_si_final_real = ensure_columns(df_si_final_real, ["do_detail_id", "si_detail_id", "transaction_number_si", "product_id"])
+    df_si_metric_real = ensure_columns(df_si_metric_real, ["do_detail_id", "si_detail_id", "transaction_number_si", "product_id", "Status_si", "item_name"])
 
     df_so_f = safe_to_numeric(df_so_f, ["Nominal"])
     df_pr_f = safe_to_numeric(df_pr_f, ["Nominal"])
@@ -1229,6 +2136,7 @@ def main():
     df_pr_final_real= safe_to_numeric(df_pr_final_real, ["item_price", "item_discount", "item_quantity", "item_tax1_percentage", "item_tax2_percentage"])
     df_do_final_real= safe_to_numeric(df_do_final_real, ["item_price", "item_discount", "item_quantity", "item_tax1_percentage", "item_tax2_percentage"])
     df_si_final_real= safe_to_numeric(df_si_final_real, ["item_price", "item_discount", "item_quantity", "item_tax1_percentage", "item_tax2_percentage"])
+    df_si_metric_real= safe_to_numeric(df_si_metric_real, ["item_price", "item_discount", "item_quantity", "item_tax1_percentage", "item_tax2_percentage"])
 
         # ---------- METRICS ----------
     total_so_unpr = safe_sum(df_so_f, "Nominal")
@@ -1250,16 +2158,18 @@ def main():
 
 
     df_so_final_real["Status_so"] = (
-    df_so_final_real["Status_so"]
-    .fillna("")
-    .astype(str)
-    .str.strip()
+        df_so_final_real["Status_so"]
+        .map(normalize_api_status)
+        .fillna("")
+        .astype(str)
+        .str.strip()
     )
     #df_so_total = df_so_final_real[
     #~df_so_final_real["Status"].isin(["Draft"])
     #].copy()
     status_filter = ['In Progress', 'Approved', 'Complete']
     df_so_total = df_so_final_real[df_so_final_real['Status_so'].isin(status_filter)]
+    debug_so_status_valid = df_so_total.copy()
     keyword_to_exclude = ['Jasa', 'Biaya', 'Admin', 'Pengiriman']
     pattern = '|'.join([re.escape(word) for word in keyword_to_exclude])
 
@@ -1281,19 +2191,39 @@ def main():
     df_so_total["total_so_row"] = df_so_total["item_quantity"] * df_so_total["net_price_unit"]
     total_so = df_so_total["total_so_row"].sum()
 
+    debug_so_final_total = df_so_total.copy()
 
-
-    df_si_final_real["Status_si"] = (
-    df_si_final_real["Status_si"]
-    .fillna("")
-    .astype(str)
-    .str.strip()
+    debug_total_so_snapshots = {
+        "RAW_SOURCE": debug_so_raw_source,
+        "PERIOD_FILTERED": debug_so_period_filtered,
+        "AFTER_SEARCH_FILTER": debug_so_after_search,
+        "STATUS_VALID": debug_so_status_valid,
+        "FINAL_TOTAL_SO": debug_so_final_total,
+    }
+    debug_total_so_summary, debug_total_so_excel, debug_total_so_gap = (
+        build_total_so_debug_package(
+            source_label="ERP API",
+            snapshots=debug_total_so_snapshots,
+            app_total_so=total_so,
+        )
     )
-    #df_so_total = df_so_final_real[
-    #~df_so_final_real["Status"].isin(["Draft"])
-    #].copy()
+
+
+
+    debug_revenue_raw_source = df_si_final.copy()
+    debug_revenue_period_filtered = df_si_metric_real.copy()
+
+    df_si_metric_real["Status_si"] = (
+        df_si_metric_real["Status_si"]
+        .map(normalize_api_status)
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
     status_filter2 = ['In Progress', 'Approved', 'Complete', 'Draft' ]
-    df_si_total = df_si_final_real[df_si_final_real['Status_si'].isin(status_filter2)]
+    df_si_status_valid = df_si_metric_real[df_si_metric_real['Status_si'].isin(status_filter2)].copy()
+    debug_revenue_status_valid = df_si_status_valid.copy()
+    df_si_total = df_si_status_valid.copy()
     keyword_to_exclude2 = ['Jasa', 'Biaya', 'Admin', 'Pengiriman']
     pattern2 = '|'.join([re.escape(word) for word in keyword_to_exclude2])
 
@@ -1314,6 +2244,17 @@ def main():
     df_si_total["net_price_unit"] = df_si_total["item_price"] - df_si_total["disc_per_unit"] + df_si_total["tax_unit"]
     df_si_total["total_si_row"] = df_si_total["item_quantity"] * df_si_total["net_price_unit"]
     total_si = df_si_total["total_si_row"].sum()
+
+    debug_revenue_final = df_si_total.copy()
+    revenue_debug_snapshots = {
+        "RAW_SOURCE": debug_revenue_raw_source,
+        "PERIOD_FILTERED": debug_revenue_period_filtered,
+        "STATUS_VALID": debug_revenue_status_valid,
+        "FINAL_REVENUE": debug_revenue_final,
+    }
+    debug_revenue_summary, debug_revenue_excel, debug_revenue_gap = build_revenue_debug_package(
+        "ERP API", revenue_debug_snapshots, float(total_si)
+    )
 
 
     df_pr_final_real["disc_per_unit"] = df_pr_final_real["item_price"] * (df_pr_final_real["item_discount"] / 100)
@@ -1341,9 +2282,9 @@ def main():
     #df_do_final_real["net_price_unit"] = df_do_final_real["item_price"] - df_do_final_real["disc_per_unit"]
     #df_do_final_real["total_do_row"] = df_do_final_real["item_quantity"] * df_do_final_real["net_price_unit"]
     
-    total_so_count = safe_unique_count(df_so_final_real, "transaction_number_so")
+    total_so_count = safe_unique_count(df_so_total, "transaction_number_so")
     total_so_balance_count = safe_unique_count(df_so_f, "No. SO")
-    total_so_rows = len(df_so_final_real)
+    total_so_rows = len(df_so_total)
     total_so_balance_rows = len(df_so_f)
 
     total_pr_count = safe_unique_count(df_pr_final_real, "transaction_number")
@@ -1364,6 +2305,11 @@ def main():
     top_pic_pr = get_top_pic(df_pr_f, "PIC Procurement", "No. PR")
     top_pic_do = get_top_pic(df_do_f, "PIC Procurement", "No. DO")
     #top_pic_pur = get_top_pic(df_pur_f, "PIC", "No. PUR")
+
+    debug_so_balance_summary, debug_so_balance_status, debug_so_balance_excel = (
+        build_so_balance_debug_package("ERP API", df_so, df_so_f)
+    )
+    debug_pic_excel = build_pic_debug_excel_api(df_so_final_real)
 
     df_customer_concentration, concentration_metrics = (
     build_customer_concentration(
@@ -1527,26 +2473,17 @@ def main():
     final_merge = apply_search_filter(final_merge, search_number, search_status, search_pic)
 
 
-    # Item SO yang sudah mempunyai DO
-    so_sudah_do = set(
-        final_merge.loc[
-            final_merge["do_detail_id"].notna(),
-            "so_detail_id"
-        ].dropna()
-    )
-
-    # Item SO yang sama sekali belum mempunyai DO
-    df_so_belum_do = (
-        final_merge[
-            ~final_merge["so_detail_id"].isin(so_sudah_do)
-        ]
-        .drop_duplicates(subset=["so_detail_id"])
-        .copy()
-    )
-
-    total_item_belum_do = df_so_belum_do["so_detail_id"].nunique()
-    total_dokumen_belum_do = df_so_belum_do["transaction_number_so"].nunique()
-    total_nominal_so_belum_do = df_so_belum_do["nominal_so"].sum()
+    # SO belum DO menggunakan dataset SO Balance final agar konsisten.
+    if not df_so_f.empty and "Balance Type" in df_so_f.columns:
+        df_so_belum_do = df_so_f[df_so_f["Balance Type"] == "NO DO"].copy()
+        total_item_belum_do = int(df_so_belum_do["SO Detail ID"].nunique()) if "SO Detail ID" in df_so_belum_do.columns else len(df_so_belum_do)
+        total_dokumen_belum_do = int(df_so_belum_do["No. SO"].nunique()) if "No. SO" in df_so_belum_do.columns else 0
+        total_nominal_so_belum_do = float(_safe_numeric_series(df_so_belum_do, "Nominal", 0.0).sum())
+    else:
+        df_so_belum_do = pd.DataFrame()
+        total_item_belum_do = 0
+        total_dokumen_belum_do = 0
+        total_nominal_so_belum_do = 0.0
 
     df_customer_pareto = build_customer_pareto(
     df_si_total,
@@ -1605,6 +2542,151 @@ def main():
                     metric_card("PIC Terbanyak", top_pic_so)
 
 
+                # =====================================================
+                # DEBUG TOTAL SO - BANDINGKAN POSTGRESQL VS API
+                # =====================================================
+                with st.expander("🧪 Debug Total SO — API", expanded=False):
+                    st.caption(
+                        "Gunakan blok ini pada kedua dashboard dengan filter tanggal/search/PIC "
+                        "yang sama. Bandingkan SUMMARY dan tab FINAL_COMPARE dari file Excel."
+                    )
+
+                    d1, d2, d3 = st.columns(3)
+                    final_debug_nominal = (
+                        float(debug_so_final_total["total_so_row"].sum())
+                        if not debug_so_final_total.empty and "total_so_row" in debug_so_final_total.columns
+                        else 0.0
+                    )
+                    with d1:
+                        metric_card(
+                            "Card Total SO",
+                            f"Rp {total_so:,.0f}".replace(",", "."),
+                        )
+                    with d2:
+                        metric_card(
+                            "Debug Final Nominal",
+                            f"Rp {final_debug_nominal:,.0f}".replace(",", "."),
+                        )
+                    with d3:
+                        metric_card(
+                            "Gap Debug vs Card",
+                            f"Rp {debug_total_so_gap:,.0f}".replace(",", "."),
+                        )
+
+                    display_debug_summary = debug_total_so_summary.copy()
+                    if "Calculated Nominal" in display_debug_summary.columns:
+                        display_debug_summary["Calculated Nominal"] = (
+                            display_debug_summary["Calculated Nominal"]
+                            .map(lambda value: f"Rp {value:,.0f}")
+                        )
+                    if "Card Total SO" in display_debug_summary.columns:
+                        display_debug_summary["Card Total SO"] = (
+                            display_debug_summary["Card Total SO"]
+                            .map(lambda value: f"Rp {value:,.0f}")
+                        )
+                    if "Final Debug vs Card Gap" in display_debug_summary.columns:
+                        display_debug_summary["Final Debug vs Card Gap"] = (
+                            display_debug_summary["Final Debug vs Card Gap"]
+                            .map(lambda value: f"Rp {value:,.0f}")
+                        )
+
+                    st.dataframe(
+                        display_debug_summary,
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                    st.download_button(
+                        label="⬇️ Download Debug Total SO — API.xlsx",
+                        data=debug_total_so_excel,
+                        file_name=(
+                            "Debug_Total_SO_api_"
+                            + datetime.now().strftime("%Y%m%d_%H%M%S")
+                            + ".xlsx"
+                        ),
+                        mime=(
+                            "application/vnd.openxmlformats-officedocument."
+                            "spreadsheetml.sheet"
+                        ),
+                        key="download_debug_total_so_api",
+                        use_container_width=True,
+                    )
+                    st.caption(
+                        "Untuk perbandingan paling cepat, upload kedua file debug. "
+                        "Tab FINAL_COMPARE memakai Compare Key = No. SO | SO Detail ID | Product ID."
+                    )
+
+
+
+                with st.expander("🧪 Debug Revenue — API", expanded=False):
+                    rr1, rr2, rr3 = st.columns(3)
+                    final_rev_debug = float(debug_revenue_final["total_si_row"].sum()) if not debug_revenue_final.empty else 0.0
+                    with rr1:
+                        metric_card("Card Revenue", f"Rp {total_si:,.0f}".replace(",", "."))
+                    with rr2:
+                        metric_card("Debug Final Revenue", f"Rp {final_rev_debug:,.0f}".replace(",", "."))
+                    with rr3:
+                        metric_card("Gap", f"Rp {debug_revenue_gap:,.0f}".replace(",", "."))
+                    rev_display = debug_revenue_summary.copy()
+                    for c in ["Calculated Revenue", "Card Revenue", "Final Debug vs Card Gap"]:
+                        if c in rev_display.columns:
+                            rev_display[c] = rev_display[c].map(lambda v: f"Rp {v:,.0f}")
+                    st.dataframe(rev_display, use_container_width=True, hide_index=True)
+                    st.download_button(
+                        "⬇️ Download Debug Revenue — API.xlsx",
+                        data=debug_revenue_excel,
+                        file_name="Debug_Revenue_api_" + datetime.now().strftime("%Y%m%d_%H%M%S") + ".xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="download_debug_revenue_api",
+                        use_container_width=True,
+                    )
+
+                with st.expander("🧪 Debug SO Balance — API", expanded=False):
+                    st.caption("SO Balance FINAL: hanya NO DO + PARTIAL DO. Balance Qty = SO Qty - Effective DO Qty; PR/SI tidak mengurangi balance.")
+                    bal_display = debug_so_balance_summary.copy()
+                    if "Nominal Balance" in bal_display.columns:
+                        bal_display["Nominal Balance"] = bal_display["Nominal Balance"].map(lambda v: f"Rp {v:,.0f}")
+                    st.dataframe(bal_display, use_container_width=True, hide_index=True)
+                    if debug_so_balance_status is not None and not debug_so_balance_status.empty:
+                        status_bal_display = debug_so_balance_status.copy()
+                        if "Nominal" in status_bal_display.columns:
+                            status_bal_display["Nominal"] = status_bal_display["Nominal"].map(lambda v: f"Rp {v:,.0f}")
+                        st.dataframe(status_bal_display, use_container_width=True, hide_index=True)
+                    st.download_button(
+                        "⬇️ Download Debug SO Balance — API.xlsx",
+                        data=debug_so_balance_excel,
+                        file_name="Debug_SO_Balance_api_" + datetime.now().strftime("%Y%m%d_%H%M%S") + ".xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="download_debug_balance_api",
+                        use_container_width=True,
+                    )
+
+                with st.expander("🧪 Debug PIC Sales — API", expanded=False):
+                    pic_nonblank = 0
+                    pic_unique = 0
+                    if "PIC Sales" in df_so_final_real.columns:
+                        pic_series = df_so_final_real["PIC Sales"].fillna("").astype(str).str.strip()
+                        pic_nonblank = int(pic_series.ne("").sum())
+                        pic_unique = int(pic_series[pic_series.ne("")].nunique())
+                        pic_summary_api = pic_series[pic_series.ne("")].value_counts().rename_axis("PIC Sales").reset_index(name="Rows")
+                    else:
+                        pic_summary_api = pd.DataFrame()
+                    p1, p2 = st.columns(2)
+                    with p1:
+                        metric_card("Rows PIC Terisi", f"{pic_nonblank:,}")
+                    with p2:
+                        metric_card("Unique PIC", f"{pic_unique:,}")
+                    if not pic_summary_api.empty:
+                        st.dataframe(pic_summary_api.head(50), use_container_width=True, hide_index=True)
+                    st.download_button(
+                        "⬇️ Download Debug PIC Sales — API.xlsx",
+                        data=debug_pic_excel,
+                        file_name="Debug_PIC_Sales_api_" + datetime.now().strftime("%Y%m%d_%H%M%S") + ".xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="download_debug_pic_api",
+                        use_container_width=True,
+                    )
+
                 so_summary = summarize_status(df_so_f, doc_col="No. SO", nominal_col="Nominal")
 
                 with st.container(border=True):
@@ -1627,7 +2709,7 @@ def main():
 
             # Download PR Balance by status
             with st.container(border=True):
-                st.subheader("📥 Download Data SO Balance (Periode & Status)")
+                st.subheader("📥 Download Data SO Balance (NO DO + PARTIAL DO)")
 
                 if not df_so_f.empty and "Status" in df_so_f.columns:
                     all_statuses = sorted([s for s in df_so_f["Status"].dropna().astype(str).unique().tolist() if s.strip()])
@@ -1647,11 +2729,11 @@ def main():
                             file_name=f"Data_SO_Export_{datetime.now().strftime('%Y%m%d')}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         )
-                        st.caption(f"Menampilkan {len(df_download_so_balance):,} baris data yang akan di-download.")
+                        st.caption(f"Menampilkan {len(df_download_so_balance):,} baris NO DO/PARTIAL DO. Balance Qty = SO Qty - Effective DO Qty.")
                     else:
                         st.warning("Tidak ada data yang sesuai dengan filter yang dipilih.")
                 else:
-                    st.info("Data PR Balance tidak tersedia untuk export.")
+                    st.info("Data SO Balance tidak tersedia untuk export.")
 
             # Download per PIC PR Balance
             with st.container(border=True):
@@ -2058,7 +3140,7 @@ def main():
 - **Base URL:** `{BASE_URL}`
 - **Timeout Request:** `{REQUEST_TIMEOUT}` detik
 - **Tanggal report sampai:** `{selected_report_date}`
-- **Mode filter tanggal:** kumulatif (semua data sampai tanggal akhir)
+- **Mode filter tanggal:** Total SO mengikuti periode yang dipilih pada Select Date Range
 - **Cache API:** 600 detik
             """
         )
