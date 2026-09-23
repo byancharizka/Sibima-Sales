@@ -1,8 +1,10 @@
-pandas
 streamlit
-requests
-numpy
-pytz
+pandas
 plotly
-pillow
-xlsxwriter
+pytz
+SQLAlchemy
+sshtunnel
+psycopg[binary]
+XlsxWriter
+python-dateutil
+paramiko
