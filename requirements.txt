@@ -3,8 +3,8 @@ pandas
 plotly
 pytz
 SQLAlchemy
-sshtunnel
+sshtunnel==0.4.0
+paramiko==3.5.1
 psycopg[binary]
 XlsxWriter
 python-dateutil
-paramiko
