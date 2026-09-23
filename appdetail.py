@@ -2518,11 +2518,11 @@ def main():
                 with c2:
                     metric_card("Total Transaksi SO Balance", f"{total_so_balance_count:,}".replace(",", "."))
 
-                c1, c2 = st.columns(2)
-                with c1:
-                    metric_card("Total Nominal SO belum di DOkan",f"Rp {total_nominal_so_belum_do:,.0f}".replace(",", "."))
-                with c2:
-                    metric_card("Total Dokumen belum DO", f"{total_dokumen_belum_do:,}")
+                #c1, c2 = st.columns(2)
+                #with c1:
+                    #metric_card("Total Nominal SO belum di DOkan",f"Rp {total_nominal_so_belum_do:,.0f}".replace(",", "."))
+                #with c2:
+                    #metric_card("Total Dokumen belum DO", f"{total_dokumen_belum_do:,}")
 
                 c1, c2 = st.columns(2)
                 with c1:
