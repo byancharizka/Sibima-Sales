@@ -2582,7 +2582,8 @@ def main():
                             label=f"⬇️Download {len(df_download_so_balance):,} Baris Data (Filtered).xlsx",
                             data=to_excel_bytes(df_download_so_balance, sheet_name="Data_SO"),
                             file_name=f"Data_SO_Export_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True
                         )
                         st.caption(f"Menampilkan {len(df_download_so_balance):,} baris NO DO/PARTIAL DO. Balance Qty = SO Qty - Effective DO Qty.")
                     else:
@@ -2620,7 +2621,8 @@ def main():
                         label=f"⬇️Download Data {selected_pic}.xlsx",
                         data=to_excel_bytes(filtered, sheet_name="Data_SO_Balance"),
                         file_name=f"Data_SO_balance_{selected_pic}_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
                     )
                     st.caption(f"Menampilkan {len(filtered):,} baris data yang akan di-download.")
                 else:
@@ -2907,36 +2909,71 @@ def main():
                         use_container_width=True,
                     )
 
-            # Download SO belum DO
+
+            # =====================================================
+            # DOWNLOAD DATA REVENUE
+            # =====================================================
             with st.container(border=True):
-                st.subheader("📥 Download Data SO belum DO")
+                st.subheader("📥 Download Data Revenue")
 
-                #if not df_so_belum_do.empty and "Status" in df_so_belum_do.columns:
-                    #all_statuses = sorted([s for s in df_so_f["Status"].dropna().astype(str).unique().tolist() if s.strip()])
-                    #selected_statuses = st.multiselect(
-                        #"Pilih Status untuk di-download:",
-                        #all_statuses,
-                        #default=all_statuses,
-                        #key="so_belumDO_status_export"
-                    #)
+                # Data yang digunakan sama persis dengan basis Card Revenue
+                df_download_revenue = df_si_total.copy()
 
-                    #df_download_so_belumDO = df_so_belum_do[df_so_belum_do["Status"].isin(selected_statuses)].copy()
-                df_download_so_belumDO = df_so_belum_do.copy()
+                if not df_download_revenue.empty:
 
-                if not df_download_so_belumDO.empty:
-                    st.download_button(
-                        label=f"⬇️Download {len(df_download_so_belumDO):,} Baris Data (Filtered).xlsx",
-                        data=to_excel_bytes(df_download_so_belumDO, sheet_name="Data_SO"),
-                        file_name=f"Data_SO_Export_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    # Pastikan total_si_row numerik
+                    df_download_revenue["total_si_row"] = pd.to_numeric(
+                        df_download_revenue["total_si_row"],
+                        errors="coerce"
+                    ).fillna(0)
+
+                    total_download_revenue = float(
+                        df_download_revenue["total_si_row"].sum()
                     )
-                    st.caption(f"Menampilkan {len(df_download_so_belumDO):,} baris data yang akan di-download.")
+
+                    total_si_download = (
+                        int(df_download_revenue["transaction_number_si"].nunique())
+                        if "transaction_number_si" in df_download_revenue.columns
+                        else 0
+                    )
+
+
+                    # -------------------------------------------------
+                    # DOWNLOAD EXCEL
+                    # -------------------------------------------------
+                    st.download_button(
+                        label=(
+                            f"⬇️ Download Data Revenue "
+                            f"({len(df_download_revenue):,} Baris).xlsx"
+                        ),
+                        data=to_excel_bytes(
+                            df_download_revenue,
+                            sheet_name="Data_Revenue"
+                        ),
+                        file_name=(
+                            "Data_Revenue_"
+                            + datetime.now().strftime("%Y%m%d_%H%M%S")
+                            + ".xlsx"
+                        ),
+                        mime=(
+                            "application/vnd.openxmlformats-officedocument."
+                            "spreadsheetml.sheet"
+                        ),
+                        key="download_data_revenue",
+                        use_container_width=True,
+                    )
+
+                    st.caption(
+                        f"Menampilkan {len(df_download_revenue):,} baris | "
+                        f"{total_si_download:,} Sales Invoice | "
+                        f"Total Revenue Rp {total_download_revenue:,.0f}"
+                        .replace(",", ".")
+                    )
+
                 else:
-                    st.warning("Tidak ada data yang sesuai dengan filter yang dipilih.")
-            #else:
-                #st.info("Data SO belum DO tidak tersedia untuk export.")
-
-
+                    st.warning(
+                        "Tidak ada data Revenue yang sesuai dengan periode yang dipilih."
+                    )
 
             # Download SO belum DO
             with st.container(border=True):
@@ -2959,7 +2996,8 @@ def main():
                         label=f"⬇️Download {len(df_download_pareto_80):,} Baris Data (Filtered).xlsx",
                         data=to_excel_bytes(df_download_pareto_80, sheet_name="Data_SO"),
                         file_name=f"Data_pareto_Export_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
                     )
                     st.caption(f"Menampilkan {len(df_download_pareto_80):,} baris data yang akan di-download.")
                 else:
